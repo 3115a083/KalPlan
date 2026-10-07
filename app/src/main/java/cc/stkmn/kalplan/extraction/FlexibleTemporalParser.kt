@@ -99,6 +99,14 @@ class FlexibleTemporalParser {
         val dates = findDates(dateText, reference.toLocalDate(), rules, issues)
         val relation = relationFor(dateText, dates)
 
+        if (dates.any { it.suspiciousYear }) {
+            issues += ExtractionIssue(
+                code = "explicit_year_suspicious",
+                message = "An explicit year looks implausible for a new request and must be checked.",
+                severity = IssueSeverity.NEEDS_REVIEW
+            )
+        }
+
         val sanitizedTimeText = if (timeText === dateText || timeText == dateText) {
             removeRanges(timeText, dates.map { it.range })
         } else {

@@ -9,22 +9,25 @@ class KalPlanExtractionPipeline(
     private val profileEngine: ProfileExtractionEngine = ProfileExtractionEngine(),
     private val temporalParser: FlexibleTemporalParser = FlexibleTemporalParser(),
     private val onlineClassifier: OnlineClassifier = OnlineClassifier(),
-    private val labelRuleEngine: LabelRuleEngine = LabelRuleEngine()
+    private val labelRuleEngine: LabelRuleEngine = LabelRuleEngine(),
+    private val textNormalizer: MailTextNormalizer = MailTextNormalizer()
 ) {
     fun extract(
         input: ExtractionInput,
         profile: ExtractionProfile?,
         labelRules: List<LabelRule> = emptyList()
     ): ExtractionResult {
+        val normalizedInput = textNormalizer.normalize(input)
+
         val profileResult = if (profile != null) {
-            profileEngine.extract(input, profile)
+            profileEngine.extract(normalizedInput, profile)
         } else {
             ProfileExtractionEngine.ProfileExtraction(emptyMap(), emptyList())
         }
 
         val fields = profileResult.values
         val issues = profileResult.issues.toMutableList()
-        val labels = labelRuleEngine.labels(input, labelRules)
+        val labels = labelRuleEngine.labels(normalizedInput, labelRules)
 
         val dateField = firstSemantic(fields, SemanticField.DATE)
         val timeField = firstSemantic(fields, SemanticField.TIME)
@@ -35,7 +38,7 @@ class KalPlanExtractionPipeline(
             ?: firstSemantic(fields, SemanticField.ONLINE_OR_LOCATION)
         val combinedOnlineLocation = firstSemantic(fields, SemanticField.ONLINE_OR_LOCATION)
 
-        val dateText = dateField?.value ?: input.combined
+        val dateText = dateField?.value ?: normalizedInput.combined
         val timeText = when {
             timeField != null && endTimeField != null ->
                 timeField.value + " - " + endTimeField.value
@@ -50,13 +53,13 @@ class KalPlanExtractionPipeline(
             timeText = timeText,
             durationText = durationField?.value.orEmpty(),
             locale = profile?.locale ?: TemporalLocale.DE_DE,
-            reference = ZonedDateTime.ofInstant(input.receivedAt, input.zoneId)
+            reference = ZonedDateTime.ofInstant(normalizedInput.receivedAt, normalizedInput.zoneId)
         )
         issues += temporal.issues
 
         val modeResult = onlineClassifier.classify(
             structuredValue = onlineField?.value,
-            body = input.combined
+            body = normalizedInput.combined
         )
 
         val location = when {
