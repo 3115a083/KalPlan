@@ -11,7 +11,7 @@ fun MailAccount.runtime(): MailAccountRuntimeConfig {
 class AccountProviders(private val repository: AppRepository) : MailAccountConfigProvider, MailCredentialProvider {
     override suspend fun account(accountId: String): MailAccountRuntimeConfig = repository.data.value.accounts.first { it.id == accountId }.runtime()
     override suspend fun credential(accountId: String, authMode: MailAuthMode): String {
-        require(authMode == if (authMode == "XOAUTH2") MailAuthMode.XOAUTH2 else MailAuthMode.PASSWORD) { "OAuth setup not available" }
-        return repository.secret(accountId)
+        return if (authMode == MailAuthMode.XOAUTH2) cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.accessToken(repository.context, repository, accountId)
+            else repository.secret(accountId)
     }
 }

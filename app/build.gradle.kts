@@ -82,3 +82,16 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
+
+// Export exact runtime component versions for an online advisory check in CI.
+tasks.register("dependencyInventory") {
+    val runtime = configurations.named("debugRuntimeClasspath")
+    doLast {
+        val identifiers = runtime.get().incoming.resolutionResult.allComponents.mapNotNull {
+            it.id as? org.gradle.api.artifacts.component.ModuleComponentIdentifier
+        }.distinctBy { "${it.group}:${it.module}:${it.version}" }.sortedBy { "${it.group}:${it.module}" }
+        val target = layout.buildDirectory.file("reports/dependencies.tsv").get().asFile
+        target.parentFile.mkdirs()
+        target.writeText(identifiers.joinToString("\n") { "${it.group}:${it.module}\t${it.version}" })
+    }
+}

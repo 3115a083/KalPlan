@@ -126,7 +126,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             cc.stkmn.kalplan.infrastructure.mail.AngusMailReader(providers, providers).downloadAttachment(cc.stkmn.kalplan.domain.port.MailFolderRef(request.accountId, request.folder), request.id, file.partPath, target)
             val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, file.mime)
-                .setClipData(android.content.ClipData.newRawUri("attachment", uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))
+                .apply { clipData = android.content.ClipData.newRawUri("attachment", uri) }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))
         } }) { Text(tr("Laden und öffnen", "Download and open")) } }, dismissButton = { TextButton(onClick = { attachmentToOpen = null }) { Text(tr("Abbrechen", "Cancel")) } }) }
     if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW") } } })
     if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, repository, busy, onRun, onDismiss = { routing = false })
