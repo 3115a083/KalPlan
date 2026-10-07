@@ -10,7 +10,8 @@ class KalPlanExtractionPipeline(
     private val temporalParser: FlexibleTemporalParser = FlexibleTemporalParser(),
     private val onlineClassifier: OnlineClassifier = OnlineClassifier(),
     private val labelRuleEngine: LabelRuleEngine = LabelRuleEngine(),
-    private val textNormalizer: MailTextNormalizer = MailTextNormalizer()
+    private val textNormalizer: MailTextNormalizer = MailTextNormalizer(),
+    private val locationHeuristicExtractor: LocationHeuristicExtractor = LocationHeuristicExtractor()
 ) {
     fun extract(
         input: ExtractionInput,
@@ -51,7 +52,7 @@ class KalPlanExtractionPipeline(
         val temporal = temporalParser.parse(
             dateText = dateText,
             timeText = timeText,
-            durationText = durationField?.value.orEmpty(),
+            durationText = durationField?.value ?: normalizedInput.combined,
             locale = profile?.locale ?: TemporalLocale.DE_DE,
             reference = ZonedDateTime.ofInstant(normalizedInput.receivedAt, normalizedInput.zoneId)
         )
@@ -62,12 +63,19 @@ class KalPlanExtractionPipeline(
             body = normalizedInput.combined
         )
 
+        val heuristicLocation = if (locationField == null && combinedOnlineLocation == null) {
+            locationHeuristicExtractor.extract(normalizedInput.combined)
+        } else {
+            null
+        }
+
         val location = when {
             locationField != null -> locationField.value
             combinedOnlineLocation != null &&
                 modeResult.mode != MeetingMode.ONLINE &&
                 modeResult.mode != MeetingMode.HYBRID ->
                 combinedOnlineLocation.value
+            heuristicLocation != null -> heuristicLocation.value
             else -> null
         }
 

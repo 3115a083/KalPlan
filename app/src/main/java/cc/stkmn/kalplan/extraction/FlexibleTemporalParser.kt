@@ -1,10 +1,12 @@
 package cc.stkmn.kalplan.extraction
 
+import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZonedDateTime
 import java.time.temporal.ChronoUnit
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -227,6 +229,9 @@ class FlexibleTemporalParser {
         rules: Rules,
         issues: MutableList<ExtractionIssue>
     ): List<DateToken> {
+        val relative = relativeDates(text, referenceDate, rules)
+        if (relative.isNotEmpty()) return relative
+
         val iso = isoDate.findAll(text).mapNotNull { match ->
             val year = match.groupValues[1].toInt()
             val month = match.groupValues[2].toInt()
@@ -241,6 +246,13 @@ class FlexibleTemporalParser {
                 it.groupValues[3].takeIf(String::isNotBlank)?.let { y -> resolveExplicitYear(y) }
             }
             val sharedYear = explicitYears.distinct().singleOrNull()
+            if (explicitYears.distinct().size > 1 && numericMatches.any { it.groupValues[3].isBlank() }) {
+                issues += ExtractionIssue(
+                    code = "mixed_explicit_years",
+                    message = "Date series contains different explicit years and at least one date without a year.",
+                    severity = IssueSeverity.NEEDS_REVIEW
+                )
+            }
 
             val parsed = numericMatches.mapNotNull { match ->
                 val first = match.groupValues[1].toInt()
@@ -316,7 +328,106 @@ class FlexibleTemporalParser {
             if (mdy.isNotEmpty()) return mdy.distinctBy { it.date to it.range }
         }
 
+        val weekday = weekdayDates(text, referenceDate, rules)
+        if (weekday.isNotEmpty()) return weekday
+
         return emptyList()
+    }
+
+    private fun relativeDates(
+        text: String,
+        referenceDate: LocalDate,
+        rules: Rules
+    ): List<DateToken> {
+        val terms = buildList {
+            if (rules.germanWords) {
+                add("übermorgen" to referenceDate.plusDays(2))
+                add("uebermorgen" to referenceDate.plusDays(2))
+                add("morgen" to referenceDate.plusDays(1))
+                add("heute" to referenceDate)
+            }
+            if (rules.englishWords) {
+                add("day after tomorrow" to referenceDate.plusDays(2))
+                add("tomorrow" to referenceDate.plusDays(1))
+                add("today" to referenceDate)
+            }
+        }
+
+        return terms.flatMap { pair ->
+            val word = pair.first
+            val date = pair.second
+            Regex("\\b" + Regex.escape(word) + "\\b", RegexOption.IGNORE_CASE)
+                .findAll(text)
+                .map { match ->
+                    DateToken(
+                        date = date,
+                        range = match.range,
+                        raw = match.value,
+                        explicitYear = false,
+                        suspiciousYear = false
+                    )
+                }
+                .toList()
+        }.sortedBy { it.range.first }
+            .distinctBy { it.date to it.range }
+    }
+
+    private fun weekdayDates(
+        text: String,
+        referenceDate: LocalDate,
+        rules: Rules
+    ): List<DateToken> {
+        val terms = linkedMapOf<String, DayOfWeek>()
+        if (rules.germanWords) {
+            terms += mapOf(
+                "montag" to DayOfWeek.MONDAY,
+                "dienstag" to DayOfWeek.TUESDAY,
+                "mittwoch" to DayOfWeek.WEDNESDAY,
+                "donnerstag" to DayOfWeek.THURSDAY,
+                "freitag" to DayOfWeek.FRIDAY,
+                "samstag" to DayOfWeek.SATURDAY,
+                "sonntag" to DayOfWeek.SUNDAY
+            )
+        }
+        if (rules.englishWords) {
+            terms += mapOf(
+                "monday" to DayOfWeek.MONDAY,
+                "tuesday" to DayOfWeek.TUESDAY,
+                "wednesday" to DayOfWeek.WEDNESDAY,
+                "thursday" to DayOfWeek.THURSDAY,
+                "friday" to DayOfWeek.FRIDAY,
+                "saturday" to DayOfWeek.SATURDAY,
+                "sunday" to DayOfWeek.SUNDAY
+            )
+        }
+
+        return terms.mapNotNull { entry ->
+            val prefix = if (rules.germanWords) {
+                "(?:nächsten|naechsten|kommenden|am)?"
+            } else {
+                "(?:next|this|on)?"
+            }
+            val regex = Regex(
+                "\\b" + prefix + "\\s*" + entry.key + "\\b",
+                RegexOption.IGNORE_CASE
+            )
+            val match = regex.find(text) ?: return@mapNotNull null
+            val strictNext = listOf("nächsten", "naechsten", "kommenden", "next")
+                .any { match.value.contains(it, ignoreCase = true) }
+            val date = if (strictNext) {
+                referenceDate.with(TemporalAdjusters.next(entry.value))
+            } else {
+                referenceDate.with(TemporalAdjusters.nextOrSame(entry.value))
+            }
+
+            DateToken(
+                date = date,
+                range = match.range,
+                raw = match.value,
+                explicitYear = false,
+                suspiciousYear = false
+            )
+        }.sortedBy { it.range.first }
     }
 
     private fun buildToken(
