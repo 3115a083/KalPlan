@@ -15,6 +15,6 @@ KalPlan uses independently linked, unmodified open-source libraries. Full licens
 
 Angus Mail source is available at the upstream URL under EPL-2.0 and its stated alternative license. Full warranty and liability disclaimers accompany the library.
 
-No FairEmail or DAVx5 application source was copied. No GeoNames dataset is bundled. A future offline postcode dataset requires its own snapshot, attribution and license review. The resolved dependency inventory is emitted by CI; transitive-library notice review remains part of production-release preparation.
+No FairEmail or DAVx5 application source was copied. No GeoNames dataset is bundled. A future offline postcode dataset requires its own snapshot, attribution and license review. The resolved dependency inventory is emitted by CI; license/notice resources from every resolved runtime JAR/AAR, including nested AAR jars, are extracted automatically into the APK. Audit new dependency/license changes before a production release.
 
 This does not select a license for the KalPlan application's own source; the repository owner must choose that before wider distribution.

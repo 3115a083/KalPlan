@@ -7,6 +7,7 @@ plugins {
 android {
     namespace = "cc.stkmn.kalplan"
     compileSdk = 37
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/dependency-notices"))
 
     defaultConfig {
         applicationId = "cc.stkmn.kalplan"
@@ -101,3 +102,53 @@ tasks.register("dependencyInventory") {
         target.writeText(identifiers.joinToString("\n") { "${it.group}:${it.module}\t${it.version}" })
     }
 }
+
+
+// Preserve notices from all exact runtime archives, including nested AAR jars.
+val bundleDependencyNotices = tasks.register("bundleDependencyNotices") {
+    val runtime = configurations.named("debugRuntimeClasspath")
+    val output = layout.buildDirectory.dir("generated/dependency-notices")
+    inputs.files(runtime)
+    outputs.dir(output)
+    doLast {
+        val destination = output.get().asFile
+        destination.deleteRecursively()
+        val licenses = destination.resolve("licenses").apply { mkdirs() }
+        val temporary = layout.buildDirectory.dir("notice-tmp").get().asFile.apply { mkdirs() }
+        val inventory = mutableListOf<String>()
+        var counter = 0
+        fun copyNotices(archive: java.io.File, component: String, nested: Boolean = false) {
+            java.util.zip.ZipFile(archive).use { zip ->
+                val entries = zip.entries().asSequence().toList()
+                for (entry in entries.filter { !it.isDirectory }) {
+                    val name = entry.name.substringAfterLast('/').uppercase()
+                    if (name.contains("LICENSE") || name.contains("NOTICE") || name.startsWith("COPYING")) {
+                        require(entry.size <= 1_000_000) { "Dependency notice exceeds size limit" }
+                        val bytes = zip.getInputStream(entry).use { it.readNBytes(1_000_001) }
+                        require(bytes.size <= 1_000_000)
+                        val prefix = component.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(140)
+                        val basename = entry.name.substringAfterLast('/').replace(Regex("[^a-zA-Z0-9._-]"), "_").take(60)
+                        licenses.resolve("dependency-" + prefix + "-" + counter++ + "-" + basename + ".txt")
+                            .writeBytes(bytes)
+                    }
+                    if (!nested && archive.extension == "aar" && (entry.name == "classes.jar" || entry.name.startsWith("libs/") && entry.name.endsWith(".jar"))) {
+                        require(entry.size <= 100_000_000) { "Nested dependency archive exceeds limit" }
+                        val jar = java.io.File.createTempFile("notice-", ".jar", temporary)
+                        try {
+                            zip.getInputStream(entry).use { input -> jar.outputStream().use { input.copyTo(it) } }
+                            copyNotices(jar, component, true)
+                        } finally { jar.delete() }
+                    }
+                }
+            }
+        }
+        for (artifact in runtime.get().incoming.artifacts.artifacts.sortedBy { it.id.componentIdentifier.displayName }) {
+            val component = artifact.id.componentIdentifier.displayName
+            inventory += component
+            if (artifact.file.extension in setOf("jar", "aar")) copyNotices(artifact.file, component)
+        }
+        licenses.resolve("01-RESOLVED-COMPONENTS.txt").writeText(inventory.distinct().joinToString("\n"))
+        logger.lifecycle("Bundled {} dependency notice/license entries.", counter)
+    }
+}
+tasks.named("preBuild") { dependsOn(bundleDependencyNotices) }

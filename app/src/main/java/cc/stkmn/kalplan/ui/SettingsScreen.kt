@@ -238,10 +238,16 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
         Spacer(Modifier.height(40.dp))
     }
     if (noticesOpen) {
-        val notice = remember { context.assets.list("licenses").orEmpty().sorted().joinToString("\n\n") { name -> name + "\n" + context.assets.open("licenses/$name").bufferedReader().use { it.readText() } } }
+        val files = remember { context.assets.list("licenses").orEmpty().sorted() }
+        var selectedFile by remember { mutableStateOf<String?>(null) }
+        val notice = remember(selectedFile) { selectedFile?.let { context.assets.open("licenses/$it").bufferedReader().use { reader -> reader.readText() } }.orEmpty() }
         AlertDialog(onDismissRequest = { noticesOpen = false }, title = { Text(tr("Open-Source-Lizenzen", "Open-source licenses")) },
-            text = { SelectionContainer { Text(notice, Modifier.verticalScroll(rememberScrollState())) } },
-            confirmButton = { TextButton(onClick = { noticesOpen = false }) { Text(tr("Schließen", "Close")) } })
+            text = {
+                if (selectedFile == null) androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 500.dp)) {
+                    items(files.size) { i -> TextButton(onClick = { selectedFile = files[i] }) { Text(files[i]) } }
+                } else SelectionContainer { Text(notice, Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState())) }
+            },
+            confirmButton = { TextButton(onClick = { if (selectedFile != null) selectedFile = null else noticesOpen = false }) { Text(if (selectedFile != null) tr("Zur Übersicht", "Browse licenses") else tr("Schließen", "Close")) } })
     }
     if (newAccount || accountEdit != null) AccountDialog(accountEdit, state, repository, busy, onRun,
         onDismiss = { newAccount = false; accountEdit = null })
