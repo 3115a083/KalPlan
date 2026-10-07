@@ -19,9 +19,9 @@ import java.util.Date
 
 class AngusMailReader(
     private val accountConfigProvider: MailAccountConfigProvider,
-    private val credentialProvider: MailCredentialProvider,
-    private val mimeTextExtractor: MimeTextExtractor = MimeTextExtractor()
+    private val credentialProvider: MailCredentialProvider
 ) : MailReader {
+    private val mimeTextExtractor = MimeTextExtractor()
 
     override suspend fun listFolders(accountId: String): List<MailFolderRef> =
         withConnectedStore(accountId) { store ->
