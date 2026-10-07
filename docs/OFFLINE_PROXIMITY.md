@@ -63,3 +63,10 @@ Otherwise:
 - possibly feasible.
 
 The user can still request real routing manually.
+
+
+## Preprocessing
+
+`tools/prepare_geonames_postcodes.py` converts an already downloaded and verified GeoNames postal-code dump into the compact TSV expected by `TsvPlaceIndex`.
+
+The script intentionally performs no download. Source acquisition, checksum and license verification remain explicit release engineering steps.
