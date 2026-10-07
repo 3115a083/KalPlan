@@ -11,7 +11,7 @@ KalPlan uses independently linked, unmodified open-source libraries. Full licens
 | Kotlin and kotlinx | Apache-2.0, JetBrains contributors | https://github.com/JetBrains/kotlin |
 | Eclipse Angus Mail 2.0.5 | EPL-2.0 or GPL-2.0 with Classpath Exception | https://github.com/eclipse-ee4j/angus-mail |
 | Angus Activation 2.0.3 | BSD-3-Clause (EDL-1.0) | https://github.com/eclipse-ee4j/angus-activation |
-| Jakarta Activation API 2.1.4 | BSD-3-Clause (EDL-1.0) | https://github.com/jakartaee/activation |
+| Jakarta Activation API 2.1.4 | BSD-3-Clause (EDL-1.0) | https://github.com/jakartaee/jaf-api |
 
 Angus Mail source is available at the upstream URL under EPL-2.0 and its stated alternative license. Full warranty and liability disclaimers accompany the library.
 

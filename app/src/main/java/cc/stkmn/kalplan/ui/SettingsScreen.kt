@@ -70,6 +70,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     var flatRate by remember(state.settings) { mutableStateOf((draft.value.flatCents / 100.0).toString()) }
     var step by remember(state.settings) { mutableStateOf(draft.value.billingStepMinutes.toString()) }
     var labelJson by remember(state.settings) { mutableStateOf(kotlinx.serialization.json.Json { prettyPrint = true; encodeDefaults = true }.encodeToString(kotlinx.serialization.builtins.ListSerializer(LabelPolicy.serializer()), draft.labels)) }
+    var attachmentJson by remember(state.settings) { mutableStateOf(kotlinx.serialization.json.Json { prettyPrint = true; encodeDefaults = true }.encodeToString(kotlinx.serialization.builtins.ListSerializer(AttachmentRule.serializer()), draft.attachmentRules)) }
     var feedback by remember { mutableStateOf("") }
     var debugOpen by rememberSaveable { mutableStateOf(false) }
     var taps by remember { mutableStateOf(0) }
@@ -179,6 +180,8 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
         ChoiceRow(listOf("MATERIAL_YOU", "KALPLAN", "NEUTRAL_BUSINESS", "TURQUOISE", "HIGH_CONTRAST"), draft.theme) { draft = draft.copy(theme = it) }
         EditField(tr("Eigene Primärfarbe, RRGGBB oder leer", "Custom primary color, RRGGBB or empty"), draft.primaryHex) { draft = draft.copy(primaryHex = it.removePrefix("#")) }
         ChoiceRow(listOf("IGNORE", "RELEVANT", "ALL"), draft.attachments) { draft = draft.copy(attachments = it) }
+        Text(tr("Anhangregeln: erste passende Regel gilt. MIME-Präfix, Endung, Name, Größe und Inline-Status sind kombinierbar.", "Attachment rules: first match wins. Combine MIME prefix, extension, name, size and inline status."))
+        EditField(tr("Anhangregeln, JSON", "Attachment rules, JSON"), attachmentJson) { attachmentJson = it }
         EditField(tr("Routing-Tageslimit je Anbieter", "Routing daily limit per provider"), limit) { limit = it }
         if (Build.VERSION.SDK_INT >= 33) OutlinedButton(onClick = { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text(tr("Benachrichtigungen erlauben", "Allow notifications")) }
         Button(enabled = !busy, modifier = Modifier.fillMaxWidth(), onClick = {
@@ -194,7 +197,9 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 val increment = step.toInt(); require(increment in 1..1440)
                 val labels = kotlinx.serialization.json.Json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(LabelPolicy.serializer()), labelJson)
                 require(labels.size <= 100 && labels.all { it.name.isNotBlank() && (it.durationMinutes == null || it.durationMinutes in 1..10080) && it.score in -100..100 && it.shortScore in -100..100 })
-                val next = draft.copy(syncMinutes = interval, defaultDuration = d, staleHours = s, beforeBuffer = b, afterBuffer = a, originThreshold = t, routingDailyLimit = l, labels = labels,
+                val attachmentRules = kotlinx.serialization.json.Json.decodeFromString(kotlinx.serialization.builtins.ListSerializer(AttachmentRule.serializer()), attachmentJson)
+                require(attachmentRules.size <= 100 && attachmentRules.all { (it.minBytes == null || it.minBytes >= 0) && (it.maxBytes == null || it.maxBytes >= 0) && (it.minBytes == null || it.maxBytes == null || it.minBytes <= it.maxBytes) })
+                val next = draft.copy(attachmentRules = attachmentRules, syncMinutes = interval, defaultDuration = d, staleHours = s, beforeBuffer = b, afterBuffer = a, originThreshold = t, routingDailyLimit = l, labels = labels,
                     value = draft.value.copy(workCentsPerHour = cents(workRate), travelCentsPerHour = cents(travelRate), centsPerKm = cents(kmRate), flatCents = cents(flatRate), billingStepMinutes = increment))
                 onRun { repository.update { it.copy(settings = next) }; SyncScheduler.configure(context, next.syncMinutes); feedback = "Gespeichert / Saved" }
             }.onFailure { feedback = "Eingaben prüfen / Check inputs" }

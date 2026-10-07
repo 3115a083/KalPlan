@@ -47,8 +47,6 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                         val remaps = mutableMapOf<String, String>()
                         val unseen = batch.envelopes.filterNot { e ->
                             val match = existing.firstOrNull { old -> old.id == e.stableId || old.sourceStableId == e.stableId }
-                                ?: existing.firstOrNull { old -> e.messageId != null && old.accountId == account.id && old.folder == folder &&
-                                    old.messageId == e.messageId && old.sender == e.sender && old.subject == e.subject && old.receivedMillis == e.receivedAt.toEpochMilli() }
                             if (match != null && (match.sourceStableId ?: match.id) != e.stableId) remaps[match.id] = e.stableId
                             match != null
                         }
@@ -66,10 +64,12 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                             val message = requireNotNull(item.snapshot)
                             val profile = repository.data.value.profiles.firstOrNull { it.id == account.folderProfiles[folder] }
                             val body = message.plainText ?: cc.stkmn.kalplan.extraction.MailTextNormalizer().htmlToText(message.htmlText.orEmpty())
-                            newRequests += RequestFactory.create(envelope.stableId, envelope.sender, envelope.subject, body.take(512_000), envelope.receivedAt.toEpochMilli(), repository.data.value, profile)
+                            val extracted = RequestFactory.create(envelope.stableId, envelope.sender, envelope.subject, body.take(512_000), envelope.receivedAt.toEpochMilli(), repository.data.value, profile)
                                 .copy(accountId = account.id, folder = folder, messageId = envelope.messageId,
                                     recipient = envelope.replyTo ?: envelope.sender,
                                     attachmentMeta = message.attachments.map { StoredAttachment(it.fileName ?: "attachment", it.mimeType, it.sizeBytes, it.inline, it.partPath) })
+                            val previous = existing.firstOrNull { cc.stkmn.kalplan.domain.policy.MailIdentityPolicy.matches(it, extracted) }
+                            if (previous != null) remaps[previous.id] = envelope.stableId else newRequests += extracted
                         }
                         // One durable write per folder batch, including cursor. No per-message full-store rewrites.
                         repository.update { current -> current.copy(

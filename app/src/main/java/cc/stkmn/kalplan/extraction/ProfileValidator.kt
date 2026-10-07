@@ -9,6 +9,8 @@ data class ProfileValidationError(
 class ProfileValidator {
     fun validate(profile: ExtractionProfile): List<ProfileValidationError> {
         val errors = mutableListOf<ProfileValidationError>()
+        if (listOf(profile.acceptTemplate, profile.declineTemplate).any { it != null && it.length > 100_000 })
+            errors += ProfileValidationError("reply_template_limit", "Reply template exceeds size limit.")
         if (profile.matchers.size > 100 || profile.extractors.size > 100)
             return listOf(ProfileValidationError("rule_limit", "Maximum 100 rules per profile."))
         if (profile.defaultDurationMinutes != null && profile.defaultDurationMinutes !in 1..10080)

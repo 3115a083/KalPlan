@@ -53,7 +53,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                 0 -> {
                     if (request.candidates.isEmpty()) Text(tr("Kein vollständiger Termin erkannt. Ergänze die Angaben.", "No complete appointment found. Add the details."))
                     request.candidates.forEachIndexed { i, c ->
-                        Card(onClick = { if (request.pending) onRun { repository.request(request.id) { it.copy(selectedCandidate = i) } } },
+                        Card(onClick = { if (request.pending) onRun { repository.request(request.id) { it.copy(selectedCandidate = i, routeCheckedMillis = null, travelAfterCheckedMillis = null) } } },
                             border = BorderStroke(if (i == request.selectedCandidate) 2.dp else 1.dp, if (i == request.selectedCandidate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(appointmentTime(c), fontWeight = FontWeight.SemiBold)
@@ -92,11 +92,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                 }
                 1 -> SelectionContainer { Text(request.body) }
                 2 -> {
-                    val files = when (state.settings.attachments) {
-                        "IGNORE" -> emptyList()
-                        "ALL" -> request.attachmentMeta
-                        else -> request.attachmentMeta.filterNot { it.inline && it.mime.startsWith("image/") && (it.size ?: 0) < 150_000 }
-                    }
+                    val files = request.attachmentMeta.filter { AttachmentPolicy.visible(it, state.settings) }
                     if (files.isEmpty()) Text(tr("Keine relevanten Anhänge.", "No relevant attachments."))
                     files.forEach { file -> ListItem(headlineContent = { Text(file.name) }, supportingContent = { Text(file.mime + " · " + (file.size?.let { "${it / 1024} KB" } ?: "?")) },
                         trailingContent = { TextButton(enabled = !busy && request.accountId.isNotBlank(), onClick = { attachmentToOpen = file }) { Text(tr("Öffnen", "Open")) } }) }
@@ -128,7 +124,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, file.mime)
                 .apply { clipData = android.content.ClipData.newRawUri("attachment", uri) }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))
         } }) { Text(tr("Laden und öffnen", "Download and open")) } }, dismissButton = { TextButton(onClick = { attachmentToOpen = null }) { Text(tr("Abbrechen", "Cancel")) } }) }
-    if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW") } } })
+    if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW", routeCheckedMillis = null, travelAfterCheckedMillis = null) } } })
     if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, assessment?.nextLocation.orEmpty(), repository, busy, onRun, onDismiss = { routing = false })
     if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })
     if (dismiss) AlertDialog(onDismissRequest = { dismiss = false }, title = { Text(tr("Aus KalPlan entfernen?", "Dismiss from KalPlan?")) }, text = { Text(tr("Die Quellmail bleibt erhalten. Der Eintrag bleibt im Verlauf.", "The source email is preserved. The item stays in history.")) }, confirmButton = { TextButton(onClick = { dismiss = false; onRun { repository.request(request.id) { it.copy(status = "DISMISSED") }; onClose() } }) { Text(tr("Entfernen", "Dismiss")) } }, dismissButton = { TextButton(onClick = { dismiss = false }) { Text(tr("Abbrechen", "Cancel")) } })
@@ -178,7 +174,9 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
     val context = LocalContext.current
     val settings = state.settings
     val candidate = request.candidate
-    val defaultBody = (if (accept) settings.acceptTemplate else settings.declineTemplate)
+    val profileId = state.accounts.firstOrNull { it.id == request.accountId }?.folderProfiles?.get(request.folder)
+    val profile = state.profiles.firstOrNull { it.id == profileId && it.enabled }
+    val defaultBody = (if (accept) profile?.acceptTemplate?.takeIf { it.isNotBlank() } ?: settings.acceptTemplate else profile?.declineTemplate?.takeIf { it.isNotBlank() } ?: settings.declineTemplate)
         .replace("{date}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty())
         .replace("{time}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().toString() }.orEmpty())
         .replace("{subject}", request.subject).replace("{sender}", request.sender)
@@ -232,7 +230,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Fahrtzeit manuell", "Manual travel check")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             EditField(tr("Startort", "Origin"), origin) { origin = it }
-            EditField(tr("Ziel", "Destination"), destination) { destination = it }
+            Text(tr("Ziel: ", "Destination: ") + destination.ifBlank { tr("Fehlt. Zuerst Termindetails korrigieren.", "Missing. Correct appointment details first.") })
             Text(tr("Karte öffnen überträgt die beiden Adressen an Google Maps.", "Opening the map sends both addresses to Google Maps."), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(enabled = origin.isNotBlank() && destination.isNotBlank(), onClick = {
                 val uri = Uri.parse("https://www.google.com/maps/dir/").buildUpon().appendQueryParameter("api", "1").appendQueryParameter("origin", origin).appendQueryParameter("destination", destination).appendQueryParameter("travelmode", "driving").build()
@@ -266,6 +264,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
         }
     }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis(),
                 manualOrigin = origin, manualAfterDestination = afterDestination,
+                routeOrigin = origin, routeDestination = destination, routeAfterOrigin = destination, routeAfterDestination = afterDestination,
                 travelAfterMinutes = afterMinutes.toIntOrNull()?.also { n -> require(n in 0..10080) },
                 travelAfterCheckedMillis = if (afterMinutes.toIntOrNull() != null) System.currentTimeMillis() else null) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
 }
@@ -273,6 +272,8 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
 @Composable
 private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit) {
     var name by rememberSaveable { mutableStateOf(request.subject.take(60)) }
+    var acceptOverride by rememberSaveable { mutableStateOf("") }
+    var declineOverride by rememberSaveable { mutableStateOf("") }
     var rules by remember { mutableStateOf(emptyList<ExtractorRule>()) }
     val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis)) }
     val candidates = remember(input) { GuidedRuleFactory.candidates(input) }
@@ -290,9 +291,11 @@ private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismis
                     rules = rules.filterNot { it.key == r.key } + r
                 }) { Text(tr("Feld hinzufügen", "Add field")) }
             }
+            EditField(tr("Annahmevorlage, leer = global", "Acceptance template, empty = global"), acceptOverride) { acceptOverride = it }
+            EditField(tr("Absagevorlage, leer = global", "Decline template, empty = global"), declineOverride) { declineOverride = it }
             Text("${rules.size} " + tr("Regeln", "rules"))
             OutlinedButton(enabled = rules.isNotEmpty(), onClick = {
-                val p = ExtractionProfile(id = "preview", name = name, extractors = rules)
+                val p = ExtractionProfile(id = "preview", name = name, extractors = rules, acceptTemplate = acceptOverride.takeIf { it.isNotBlank() }, declineTemplate = declineOverride.takeIf { it.isNotBlank() })
                 val r = KalPlanExtractionPipeline().extract(input, p)
                 preview = r.fields.values.joinToString("\n") { "${it.semantic}: ${it.value}" } + "\n" + r.issues.joinToString { it.code }
             }) { Text(tr("Vorschau testen", "Test preview")) }

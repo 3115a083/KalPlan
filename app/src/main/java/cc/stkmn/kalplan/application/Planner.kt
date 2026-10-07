@@ -64,7 +64,7 @@ class Planner(private val context: Context, private val repository: AppRepositor
         // Existing manual travel values are estimates, never silently treated as fresh provider data.
         val travel = request.travelMinutes
         if (status != "CONFLICT" && hasTravel) {
-            if (travel != null && request.routeCheckedMillis != null) {
+            if (travel != null && request.routeCheckedMillis != null && request.routeOrigin == origin && request.routeDestination == destination) {
                 val gap = conflict.nearestGapBeforeMinutes
                 if (gap != null && gap < travel + settings.beforeBuffer) { status = "CONFLICT"; reasons += "travel_before" }
                 if (status != "CONFLICT" && System.currentTimeMillis() - request.routeCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
@@ -73,7 +73,7 @@ class Planner(private val context: Context, private val repository: AppRepositor
         if (status != "CONFLICT" && afterTravel) {
             val afterMinutes = request.travelAfterMinutes
             val gap = conflict.nearestGapAfterMinutes
-            if (afterMinutes != null && request.travelAfterCheckedMillis != null) {
+            if (afterMinutes != null && request.travelAfterCheckedMillis != null && request.routeAfterOrigin == destination && request.routeAfterDestination == afterLocation) {
                 if (gap != null && gap < afterMinutes + settings.afterBuffer) { status = "CONFLICT"; reasons += "travel_after" }
                 else if (System.currentTimeMillis() - request.travelAfterCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
             } else { status = "POSSIBLE"; reasons += "travel_after_unchecked" }
