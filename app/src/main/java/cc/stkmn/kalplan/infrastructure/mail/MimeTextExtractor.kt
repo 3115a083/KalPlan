@@ -17,8 +17,8 @@ internal class MimeTextExtractor(
         val state = State(maxTextChars)
         visit(part, state)
         return ExtractedMimeContent(
-            plainText = state.plain.takeIf { it.isNotBlank() },
-            htmlText = state.html.takeIf { it.isNotBlank() },
+            plainText = state.plain.toString().takeIf { it.isNotBlank() },
+            htmlText = state.html.toString().takeIf { it.isNotBlank() },
             attachments = state.attachments.toList()
         )
     }
