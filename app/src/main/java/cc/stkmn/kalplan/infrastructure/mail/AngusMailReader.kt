@@ -23,6 +23,34 @@ class AngusMailReader(
 ) : MailReader {
     private val mimeTextExtractor = MimeTextExtractor()
 
+    data class IncrementalBatch(val envelopes: List<MailEnvelope>, val cursor: String, val hasMore: Boolean)
+
+    suspend fun listIncremental(folder: MailFolderRef, cursor: String?, limit: Int): IncrementalBatch =
+        withConnectedStore(folder.accountId) { store ->
+            require(limit in 1..200)
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                val validity = uids.uidValidity
+                val old = cursor?.split(':')
+                val last = if (old?.getOrNull(0)?.toLongOrNull() == validity) old.getOrNull(1)?.toLongOrNull() else null
+                val candidates = if (last == null) {
+                    val count = mailFolder.messageCount
+                    if (count == 0) emptyArray() else mailFolder.getMessages((count - limit + 1).coerceAtLeast(1), count)
+                } else {
+                    // A bounded UID window avoids materializing the entire mailbox. Empty windows are advanced too.
+                    uids.getMessagesByUID(last + 1, last + limit)
+                }
+                prefetch(mailFolder, candidates)
+                val envelopes = candidates.map { it.toEnvelope(folder, uids, validity) }
+                val nextUid = (mailFolder as? org.eclipse.angus.mail.imap.IMAPFolder)?.uidNext ?: -1L
+                val checkpoint = if (last == null) candidates.maxOfOrNull { uids.getUID(it) } ?: 0L
+                    else minOf(last + limit, if (nextUid > 0) maxOf(last, nextUid - 1) else last + limit)
+                IncrementalBatch(envelopes, "$validity:$checkpoint", nextUid > checkpoint + 1)
+            } finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
+
     override suspend fun listFolders(accountId: String): List<MailFolderRef> =
         withConnectedStore(accountId) { store ->
             store.defaultFolder
@@ -168,7 +196,8 @@ class AngusMailReader(
             messageId = getHeader("Message-ID")?.firstOrNull(),
             sender = sender,
             subject = subject.orEmpty(),
-            receivedAt = received.toInstant()
+            receivedAt = received.toInstant(),
+            replyTo = replyTo?.firstOrNull()?.let { (it as? InternetAddress)?.address }
         )
     }
 }
@@ -200,3 +229,4 @@ internal data class StableImapKey(
         }
     }
 }
+

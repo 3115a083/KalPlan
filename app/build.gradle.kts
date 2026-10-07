@@ -12,8 +12,8 @@ android {
         applicationId = "cc.stkmn.kalplan"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0-dev"
+        versionCode = 2
+        versionName = "0.2.0-dev"
     }
 
     buildTypes {
@@ -73,5 +73,9 @@ dependencies {
     implementation("org.eclipse.angus:angus-activation:2.0.3")
     implementation("jakarta.activation:jakarta.activation-api:2.1.4")
 
+    implementation("org.jsoup:jsoup:1.23.2")
+    implementation("com.google.re2j:re2j:1.8")
+
     testImplementation("junit:junit:4.13.2")
 }
+

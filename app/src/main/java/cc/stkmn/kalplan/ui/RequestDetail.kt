@@ -1,0 +1,268 @@
+package cc.stkmn.kalplan.ui
+
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import cc.stkmn.kalplan.application.*
+import cc.stkmn.kalplan.data.*
+import cc.stkmn.kalplan.domain.policy.PlanningPolicy
+import cc.stkmn.kalplan.extraction.*
+import cc.stkmn.kalplan.infrastructure.reply.ReplyPolicy
+import cc.stkmn.kalplan.infrastructure.routing.*
+import java.time.*
+import java.util.UUID
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun RequestDetail(request: StoredRequest, state: AppData, repository: AppRepository, planner: Planner, busy: Boolean,
+    replyAction: String?, onAction: (String?) -> Unit, onRun: (suspend () -> Unit) -> Unit, onClose: () -> Unit) {
+    val context = LocalContext.current
+    var tab by rememberSaveable(request.id) { mutableStateOf(0) }
+    var assessment by remember(request.id) { mutableStateOf<Assessment?>(null) }
+    var editing by rememberSaveable(request.id) { mutableStateOf(false) }
+    var routing by rememberSaveable(request.id) { mutableStateOf(false) }
+    var guided by rememberSaveable(request.id) { mutableStateOf(false) }
+    var dismiss by remember { mutableStateOf(false) }
+    LaunchedEffect(request, state.calendars, state.settings) { assessment = runCatching { planner.assess(request) }.getOrNull() }
+    if (replyAction != null) {
+        ReplyComposer(request, replyAction == "accept", state, repository, busy, onRun, onDone = { onAction(null) }, onCancel = { onAction(null) })
+    } else {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("P${PlanningPolicy.priority(request, state.settings).rank}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                StatusPill(if (request.pending) if (request.unclear) "UNKNOWN" else assessment?.status ?: "UNKNOWN" else request.status)
+            }
+            Text(request.subject, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(request.sender, style = MaterialTheme.typography.bodySmall)
+            if (request.labels.isNotEmpty()) Text(request.labels.joinToString(" · "), color = MaterialTheme.colorScheme.primary)
+            PrimaryTabRow(selectedTabIndex = tab) {
+                listOf(tr("Übersicht", "Overview"), tr("E-Mail", "Email"), tr("Anhänge", "Files"), tr("Analyse", "Analysis")).forEachIndexed { i, title -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, style = MaterialTheme.typography.labelMedium) }) }
+            }
+            when(tab) {
+                0 -> {
+                    if (request.candidates.isEmpty()) Text(tr("Kein vollständiger Termin erkannt. Ergänze die Angaben.", "No complete appointment found. Add the details."))
+                    request.candidates.forEachIndexed { i, c ->
+                        Card(onClick = { if (request.pending) onRun { repository.request(request.id) { it.copy(selectedCandidate = i) } } },
+                            border = BorderStroke(if (i == request.selectedCandidate) 2.dp else 1.dp, if (i == request.selectedCandidate) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(appointmentTime(c), fontWeight = FontWeight.SemiBold)
+                                Text("${c.durationMinutes} min" + if (c.assumed) tr(" · angenommen", " · assumed") else "")
+                                Text(if (c.mode == "ONLINE") tr("Online · Arbeitsort: ", "Online · Work location: ") + state.settings.originAddress else c.location.ifBlank { tr("Ort fehlt", "Location missing") })
+                                Text(tr("Konfidenz", "Confidence") + ": ${(c.confidence * 100).toInt()}% · ${c.relation}", style = MaterialTheme.typography.bodySmall)
+                                if (i == request.selectedCandidate) Text(tr("Ausgewählt", "Selected"), color = MaterialTheme.colorScheme.primary)
+                                c.warnings.forEach { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                            }
+                        }
+                    }
+                    if (request.pending) OutlinedButton(enabled = !busy, onClick = { editing = true }) { Text(tr("Angaben korrigieren", "Edit details")) }
+                    assessment?.let { result ->
+                        result.reasons.forEach { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium) }
+                        Text(tr("Tagesübersicht", "Day context"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        if (result.events.isEmpty()) Text(tr("Keine ausgewählten Termine in diesem Zeitraum.", "No selected events in this period."))
+                        result.events.forEach { event ->
+                            ListItem(headlineContent = { Text(event.title ?: tr("Belegt, Details verborgen", "Busy, details hidden")) }, supportingContent = { Text(event.start.atZone(ZoneId.systemDefault()).toLocalTime().toString() + " – " + event.end.atZone(ZoneId.systemDefault()).toLocalTime() + (event.location?.let { "\n$it" } ?: "")) })
+                        }
+                    }
+                    if (state.settings.value.enabled && request.candidate != null) {
+                        val value = PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, state.settings.value)
+                        Text(tr("Auftragswert, Schätzung", "Estimated order value"), style = MaterialTheme.typography.titleMedium)
+                        Text(String.format(java.util.Locale.getDefault(), "≈ %.2f €", value.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium)
+                        Text(tr("Arbeitszeit", "Work") + ": ${value.billedMinutes} min · ${value.workCents / 100.0} €\n" + tr("Fahrtzeit", "Travel") + ": ${value.travelCents / 100.0} €\n" + tr("Kilometer", "Distance") + ": ${value.distanceCents / 100.0} €\n" + tr("Pauschalen", "Flat fees") + ": ${value.flatCents / 100.0} €")
+                    }
+                    if (request.pending) {
+                        OutlinedButton(enabled = !busy, onClick = { routing = true }) { Text(tr("Fahrt manuell prüfen", "Check travel manually")) }
+                        request.travelMinutes?.let { Text("$it min · ${request.distanceKm ?: "?"} km · " + tr("Schätzung", "Estimate")) }
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(enabled = !busy, onClick = { onAction("accept") }, modifier = Modifier.weight(1f)) { Text(tr("Annehmen", "Accept")) }
+                            OutlinedButton(enabled = !busy, onClick = { onAction("decline") }, modifier = Modifier.weight(1f)) { Text(tr("Ablehnen", "Decline")) }
+                        }
+                        OutlinedButton(enabled = !busy, onClick = { dismiss = true }) { Text(tr("Lokal entfernen", "Dismiss locally")) }
+                    }
+                }
+                1 -> SelectionContainer { Text(request.body) }
+                2 -> {
+                    val files = when (state.settings.attachments) {
+                        "IGNORE" -> emptyList()
+                        "ALL" -> request.attachmentMeta
+                        else -> request.attachmentMeta.filterNot { it.inline && it.mime.startsWith("image/") && (it.size ?: 0) < 150_000 }
+                    }
+                    if (files.isEmpty()) Text(tr("Keine relevanten Anhänge.", "No relevant attachments."))
+                    files.forEach { file -> ListItem(headlineContent = { Text(file.name) }, supportingContent = { Text(file.mime + " · " + (file.size?.let { "${it / 1024} KB" } ?: "?")) }) }
+                    Text(tr("Anhänge werden nicht automatisch analysiert.", "Attachments are never analyzed automatically."), style = MaterialTheme.typography.bodySmall)
+                }
+                3 -> {
+                    Text(tr("Deterministische Extraktion, lokal", "Deterministic extraction, local"), style = MaterialTheme.typography.titleMedium)
+                    request.evidence.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    request.issues.forEach { Text(reasonText(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Text(tr("Prioritätsregeln", "Priority rules"), style = MaterialTheme.typography.titleMedium)
+                    PlanningPolicy.priority(request, state.settings).reasons.forEach { Text(it) }
+                    Button(enabled = !busy, onClick = { guided = true }) { Text(tr("Profil aus dieser Mail erstellen", "Create profile from this email")) }
+                    if (request.manual) Text(tr("Manuelle Angaben haben Vorrang und werden nicht durch Sync ersetzt.", "Manual edits take precedence and are preserved across sync."))
+                }
+            }
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+    if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW") } } })
+    if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, repository, busy, onRun, onDismiss = { routing = false })
+    if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })
+    if (dismiss) AlertDialog(onDismissRequest = { dismiss = false }, title = { Text(tr("Aus KalPlan entfernen?", "Dismiss from KalPlan?")) }, text = { Text(tr("Die Quellmail bleibt erhalten. Der Eintrag bleibt im Verlauf.", "The source email is preserved. The item stays in history.")) }, confirmButton = { TextButton(onClick = { dismiss = false; onRun { repository.request(request.id) { it.copy(status = "DISMISSED") }; onClose() } }) { Text(tr("Entfernen", "Dismiss")) } }, dismissButton = { TextButton(onClick = { dismiss = false }) { Text(tr("Abbrechen", "Cancel")) } })
+}
+
+@Composable
+private fun EditCandidateDialog(request: StoredRequest, onDismiss: () -> Unit, onSave: (StoredCandidate, List<String>) -> Unit) {
+    val c = request.candidate ?: request.candidates.firstOrNull()
+    val initial = c?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
+    var date by rememberSaveable { mutableStateOf(initial?.toLocalDate()?.toString().orEmpty()) }
+    var time by rememberSaveable { mutableStateOf(initial?.toLocalTime()?.toString()?.take(5).orEmpty()) }
+    var duration by rememberSaveable { mutableStateOf((c?.durationMinutes ?: 60).toString()) }
+    var location by rememberSaveable { mutableStateOf(c?.location.orEmpty()) }
+    var online by rememberSaveable { mutableStateOf(c?.mode == "ONLINE") }
+    var labels by rememberSaveable { mutableStateOf(request.labels.joinToString(", ")) }
+    var error by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Termin bestätigen", "Confirm appointment")) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(tr("Prüfe Datum, Jahr und Uhrzeit anhand der Originalmail.", "Verify date, year and time against the original email."))
+            EditField(tr("Datum (JJJJ-MM-TT)", "Date (YYYY-MM-DD)"), date) { date = it }
+            EditField(tr("Uhrzeit (HH:MM)", "Time (HH:MM)"), time) { time = it }
+            EditField(tr("Dauer in Minuten", "Duration in minutes"), duration) { duration = it }
+            EditField(tr("Ort", "Location"), location) { location = it }
+            ToggleRow(tr("Online", "Online"), online) { online = it }
+            EditField(tr("Labels, mit Komma trennen", "Labels, comma separated"), labels) { labels = it }
+            if (error) Text(tr("Ungültige oder mehrdeutige Zeit. Sommerzeit prüfen.", "Invalid or ambiguous time. Check daylight saving time."), color = MaterialTheme.colorScheme.error)
+        }
+    }, confirmButton = { TextButton(onClick = {
+        runCatching {
+            val local = LocalDate.parse(date).atTime(LocalTime.parse(time))
+            val offsets = ZoneId.systemDefault().rules.getValidOffsets(local)
+            require(offsets.size == 1)
+            val start = local.atOffset(offsets.single()).toInstant().toEpochMilli()
+            val minutes = duration.toInt(); require(minutes in 1..10080)
+            onSave(StoredCandidate(start, start + minutes * 60_000L, minutes, false, "USER_OVERRIDE", location, if (online) "ONLINE" else "ONSITE", 1.0), labels.split(',').map { it.trim() }.filter { it.isNotBlank() }.distinct().take(30))
+        }.onFailure { error = true }
+    }) { Text(tr("Angaben bestätigen", "Confirm details")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
+}
+
+@Composable
+private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppData, repository: AppRepository, busy: Boolean,
+    onRun: (suspend () -> Unit) -> Unit, onDone: () -> Unit, onCancel: () -> Unit) {
+    val context = LocalContext.current
+    val settings = state.settings
+    val candidate = request.candidate
+    val defaultBody = (if (accept) settings.acceptTemplate else settings.declineTemplate)
+        .replace("{date}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty())
+        .replace("{time}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().toString() }.orEmpty())
+        .replace("{subject}", request.subject).replace("{sender}", request.sender)
+    var body by rememberSaveable(request.id, accept) { mutableStateOf(defaultBody) }
+    var confirm by remember { mutableStateOf(false) }
+    var result by remember { mutableStateOf<String?>(null) }
+    val recipient = runCatching { ReplyPolicy.recipient(request, settings) }.getOrNull()
+    val simulation = request.demo || settings.debug && !settings.debugSendToTest
+    val allowed = !busy && (simulation || recipient != null && ReplyPolicy.canSend(request)) && (!accept || request.candidate != null && !request.unclear)
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(if (accept) tr("Annahme vorbereiten", "Prepare acceptance") else tr("Absage vorbereiten", "Prepare decline"), style = MaterialTheme.typography.headlineSmall)
+        Text(tr("Empfänger: ", "Recipient: ") + (recipient ?: if (simulation) tr("Simulation, kein Versand", "Simulation, no send") else tr("Ungültig. Konto prüfen.", "Invalid. Check account.")), fontWeight = FontWeight.Bold)
+        Text(appointmentTime(candidate))
+        if (settings.debug) Text(tr("Debug: Versand nur an Testadresse. Kalenderwrites werden simuliert.", "Debug: only the test address can receive mail. Calendar writes are simulated."), color = MaterialTheme.colorScheme.error)
+        if (request.accountId.isBlank() && !request.demo) Text(tr("Dieser lokale Import hat keine Quellmail. Du kannst den Text für eine manuelle Antwort kopieren.", "This local import has no source email. Copy the text for a manual reply."))
+        OutlinedTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
+        state.accounts.firstOrNull { it.id == request.accountId }?.signature?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+        if (accept) Text(tr("Nach Versand: wartet auf Rückmeldung. Eine optionale Reservierung ist kein bestätigter Auftrag.", "After sending: waiting for response. An optional reservation is not a confirmed booking."))
+        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+        OutlinedButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(body)) }) { Text(tr("Text kopieren", "Copy text")) }
+        Button(enabled = allowed && body.isNotBlank(), onClick = { confirm = true }) { Text(if (simulation) tr("Simulation prüfen", "Review simulation") else tr("Senden prüfen", "Review send")) }
+        TextButton(enabled = !busy, onClick = onCancel) { Text(tr("Zurück", "Back")) }
+        result?.let { Text(when(it) {
+            "delivery_unknown" -> tr("Versand ungewiss. Bitte zuerst im Mailkonto prüfen. Erneutes Senden ist gesperrt.", "Delivery uncertain. Check your mail account first. Resending is blocked.")
+            "reservation_failed" -> tr("Antwort wurde gesendet. Kalenderreservierung ist fehlgeschlagen. Nicht erneut senden.", "Reply was sent. Calendar reservation failed. Do not resend.")
+            "debug_simulated", "demo_no_send" -> tr("Simulation abgeschlossen. Keine Mail versendet, kein Kalender geändert.", "Simulation complete. No email sent or calendar changed.")
+            else -> tr("Antwort wurde gesendet.", "Reply sent.")
+        }, color = MaterialTheme.colorScheme.primary) }
+    }
+    if (confirm) AlertDialog(onDismissRequest = { if (!busy) confirm = false }, title = { Text(tr("Versand bestätigen", "Confirm send")) },
+        text = { Text((if (accept) tr("Annehmen", "Accept") else tr("Ablehnen", "Decline")) + "\n${recipient.orEmpty()}\n${appointmentTime(candidate)}\n\n" + tr("Vor einer Annahme prüft KalPlan den Kalender erneut. Bei Konflikten, ungeklärter Fahrt oder fehlendem Zugriff stoppt der Versand.", "Before acceptance, KalPlan checks the calendar again. Conflicts, unchecked travel or missing access stop sending.")) },
+        confirmButton = { TextButton(enabled = allowed, onClick = { confirm = false; onRun { result = ReplyCoordinator(context, repository).send(request.id, accept, body, recipient.orEmpty(), request) } }) { Text(if (simulation) tr("Simulation bestätigen", "Confirm simulation") else tr("Jetzt senden", "Send now")) } },
+        dismissButton = { TextButton(enabled = !busy, onClick = { confirm = false }) { Text(tr("Abbrechen", "Cancel")) } })
+}
+
+@Composable
+private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: String, repository: AppRepository, busy: Boolean,
+    onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    var origin by rememberSaveable { mutableStateOf(originAddress) }
+    var destination by rememberSaveable { mutableStateOf(if (request.candidate?.mode == "ONLINE") state.settings.originAddress else request.candidate?.location.orEmpty()) }
+    var minutes by rememberSaveable { mutableStateOf(request.travelMinutes?.toString().orEmpty()) }
+    var km by rememberSaveable { mutableStateOf(request.distanceKm?.toString().orEmpty()) }
+    var provider by rememberSaveable { mutableStateOf(state.settings.routingProvider.takeIf { it in listOf("GOOGLE", "HERE", "TOMTOM", "ORS", "GRAPHHOPPER") } ?: "ORS") }
+    var key by remember { mutableStateOf("") }
+    var oCoordinates by rememberSaveable { mutableStateOf("") }
+    var dCoordinates by rememberSaveable { mutableStateOf("") }
+    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Fahrtzeit manuell", "Manual travel check")) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            EditField(tr("Startort", "Origin"), origin) { origin = it }
+            EditField(tr("Ziel", "Destination"), destination) { destination = it }
+            Text(tr("Karte öffnen überträgt die beiden Adressen an Google Maps.", "Opening the map sends both addresses to Google Maps."), style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(enabled = origin.isNotBlank() && destination.isNotBlank(), onClick = {
+                val uri = Uri.parse("https://www.google.com/maps/dir/").buildUpon().appendQueryParameter("api", "1").appendQueryParameter("origin", origin).appendQueryParameter("destination", destination).appendQueryParameter("travelmode", "driving").build()
+                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+            }) { Text(tr("Karte öffnen", "Open map")) }
+            Text(tr("Oder API-Abfrage: nur diese Koordinaten verlassen das Gerät. Kein automatisches Geocoding. Ergebnis ist eine Schätzung ohne garantierte Verkehrsprognose.", "Or query an API: only these coordinates leave the device. No automatic geocoding. Results are estimates without guaranteed traffic prediction."))
+            ChoiceRow(listOf("GOOGLE", "HERE", "TOMTOM", "ORS", "GRAPHHOPPER"), provider) { provider = it }
+            EditField(tr("Start: Breitengrad,Längengrad", "Origin: latitude,longitude"), oCoordinates) { oCoordinates = it }
+            EditField(tr("Ziel: Breitengrad,Längengrad", "Destination: latitude,longitude"), dCoordinates) { dCoordinates = it }
+            SecretField("API-Key", key) { key = it }
+            Button(enabled = !busy, onClick = { onRun {
+                val apiKey = key.ifBlank { repository.routingKey(provider) }
+                if (key.isNotBlank()) repository.saveRoutingKey(provider, key)
+                val result = ManualRouting(repository).route(provider, RoutePoint.parse(oCoordinates), RoutePoint.parse(dCoordinates), apiKey)
+                minutes = result.minutes.toString(); km = result.km.toString()
+            } }) { Text(tr("Kostenpflichtige Abfrage auslösen", "Run metered API query")) }
+            Text(tr("Tageslimit je Anbieter: ", "Daily limit per provider: ") + state.settings.routingDailyLimit)
+            EditField(tr("Fahrtminuten zum Termin", "Travel minutes to appointment"), minutes) { minutes = it }
+            EditField(tr("Entfernung, km", "Distance, km"), km) { km = it }
+        }
+    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull() in 0..10080 && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis()) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
+}
+
+@Composable
+private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(request.subject.take(60)) }
+    var rules by remember { mutableStateOf(emptyList<ExtractorRule>()) }
+    val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis)) }
+    val candidates = remember(input) { GuidedRuleFactory.candidates(input) }
+    var preview by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Geführtes Extraktionsprofil", "Guided extraction profile")) }, text = {
+        Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            EditField(tr("Profilname", "Profile name"), name) { name = it }
+            Text(tr("Ordne erkannte Zeilen einem Feld zu. Regeln werden erst nach Speichern und Zuordnung zu einem Mailordner aktiv.", "Assign detected lines to a field. Rules become active after saving and assigning a mail folder."))
+            candidates.forEachIndexed { i, c ->
+                Text("${c.label}: ${c.value.take(100)}", style = MaterialTheme.typography.bodySmall)
+                var semantic by remember(i) { mutableStateOf("CUSTOM") }
+                ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic) { semantic = it }
+                TextButton(onClick = {
+                    val r = GuidedRuleFactory.extractor(c, "field_$i", SemanticField.valueOf(semantic))
+                    rules = rules.filterNot { it.key == r.key } + r
+                }) { Text(tr("Feld hinzufügen", "Add field")) }
+            }
+            Text("${rules.size} " + tr("Regeln", "rules"))
+            OutlinedButton(enabled = rules.isNotEmpty(), onClick = {
+                val p = ExtractionProfile(id = "preview", name = name, extractors = rules)
+                val r = KalPlanExtractionPipeline().extract(input, p)
+                preview = r.fields.values.joinToString("\n") { "${it.semantic}: ${it.value}" } + "\n" + r.issues.joinToString { it.code }
+            }) { Text(tr("Vorschau testen", "Test preview")) }
+            Text(preview, style = MaterialTheme.typography.bodySmall)
+        }
+    }, confirmButton = { TextButton(enabled = rules.isNotEmpty() && name.isNotBlank(), onClick = {
+        val p = ExtractionProfile(id = UUID.randomUUID().toString(), name = name, extractors = rules)
+        if (ProfileValidator().validate(p).isEmpty()) onSave(p)
+    }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
+}

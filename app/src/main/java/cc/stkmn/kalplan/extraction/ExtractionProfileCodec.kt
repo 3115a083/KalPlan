@@ -26,6 +26,7 @@ class ExtractionProfileCodec(
     fun encode(profile: ExtractionProfile): String = json.encodeToString(profile)
 
     fun decode(value: String): ProfileDecodeResult {
+        if (value.length > 1_000_000) return ProfileDecodeResult(null, listOf(ProfileValidationError("size_limit", "Profile exceeds size limit.")))
         val profile = try {
             json.decodeFromString<ExtractionProfile>(value)
         } catch (_: SerializationException) {
@@ -57,3 +58,4 @@ class ExtractionProfileCodec(
         )
     }
 }
+

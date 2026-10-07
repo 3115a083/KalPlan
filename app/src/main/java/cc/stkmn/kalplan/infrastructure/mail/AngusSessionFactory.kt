@@ -24,6 +24,9 @@ object AngusSessionFactory {
 
     private fun baseProperties(prefix: String, config: MailServerConfig): Properties =
         Properties().apply {
+            require(config.host.isNotBlank() && config.host.length <= 253 && !config.host.any { it.isWhitespace() || it == '/' }) { "Invalid mail host" }
+            require(config.port in 1..65535) { "Invalid port" }
+            put("$prefix.ssl.protocols", "TLSv1.2 TLSv1.3")
             put("$prefix.host", config.host)
             put("$prefix.port", config.port.toString())
             put("$prefix.connectiontimeout", "10000")
@@ -60,3 +63,4 @@ object AngusSessionFactory {
         }
     }
 }
+

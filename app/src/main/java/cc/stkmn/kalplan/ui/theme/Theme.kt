@@ -73,6 +73,7 @@ private val HighContrastDark = darkColorScheme(
 fun KalPlanTheme(
     choice: ThemeChoice = ThemeChoice.MATERIAL_YOU,
     darkTheme: Boolean = isSystemInDarkTheme(),
+    primaryHex: String = "",
     content: @Composable () -> Unit
 ) {
     val context = LocalContext.current
@@ -90,7 +91,12 @@ fun KalPlanTheme(
     }
 
     MaterialTheme(
-        colorScheme = scheme,
+        colorScheme = if (primaryHex.matches(Regex("[0-9a-fA-F]{6}"))) {
+            val custom = Color(android.graphics.Color.parseColor("#" + primaryHex))
+            val luminance = 0.2126 * custom.red + 0.7152 * custom.green + 0.0722 * custom.blue
+            scheme.copy(primary = custom, onPrimary = if (luminance > 0.5) Color.Black else Color.White)
+        } else scheme,
         content = content
     )
 }
+
