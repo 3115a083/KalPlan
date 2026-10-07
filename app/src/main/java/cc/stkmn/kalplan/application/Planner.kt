@@ -10,7 +10,7 @@ import cc.stkmn.kalplan.domain.policy.*
 import cc.stkmn.kalplan.infrastructure.calendar.AndroidCalendarReader
 import java.time.*
 
-data class Assessment(val status: String, val reasons: List<String>, val events: List<CalendarEventRef>, val origin: String)
+data class Assessment(val status: String, val reasons: List<String>, val events: List<CalendarEventRef>, val origin: String, val nextLocation: String = "")
 
 class Planner(private val context: Context, private val repository: AppRepository) {
     suspend fun assess(request: StoredRequest): Assessment {
@@ -50,10 +50,10 @@ class Planner(private val context: Context, private val repository: AppRepositor
             return event.location?.takeIf { it.isNotBlank() && (p.showLocation || p.useHiddenLocationForRouting) }
         }
         val previousRelevant = previous != null && Duration.between(previous.end, start).toMinutes() <= settings.originThreshold
-        val origin = if (previousRelevant) usableLocation(previous) ?: settings.originAddress else settings.originAddress
+        val origin = if (request.manualOrigin.isNotBlank()) request.manualOrigin else if (previousRelevant) usableLocation(previous) ?: settings.originAddress else settings.originAddress
         val destination = if (candidate.mode == "ONLINE") settings.originAddress else candidate.location
         val hasTravel = origin.isNotBlank() && destination.isNotBlank() && !origin.equals(destination, true)
-        val afterLocation = usableLocation(next)
+        val afterLocation = request.manualAfterDestination.takeIf { it.isNotBlank() } ?: usableLocation(next)
         val afterTravel = afterLocation != null && destination.isNotBlank() && !destination.equals(afterLocation, true)
         val reasons = mutableListOf<String>()
         var status = when (conflict.status) {
@@ -70,14 +70,26 @@ class Planner(private val context: Context, private val repository: AppRepositor
                 if (status != "CONFLICT" && System.currentTimeMillis() - request.routeCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
             } else { status = "POSSIBLE"; reasons += "travel_unchecked" }
         }
-        if (status != "CONFLICT" && (afterTravel || candidate.mode == "UNKNOWN" || destination.isBlank())) {
-            status = "POSSIBLE"; reasons += if (afterTravel) "travel_after_unchecked" else "location_unclear"
+        if (status != "CONFLICT" && afterTravel) {
+            val afterMinutes = request.travelAfterMinutes
+            val gap = conflict.nearestGapAfterMinutes
+            if (afterMinutes != null && request.travelAfterCheckedMillis != null) {
+                if (gap != null && gap < afterMinutes + settings.afterBuffer) { status = "CONFLICT"; reasons += "travel_after" }
+                else if (System.currentTimeMillis() - request.travelAfterCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
+            } else { status = "POSSIBLE"; reasons += "travel_after_unchecked" }
+        }
+        if (status != "CONFLICT" && (candidate.mode == "UNKNOWN" || destination.isBlank() ||
+            previousRelevant && usableLocation(previous) == null && request.manualOrigin.isBlank() ||
+            next != null && usableLocation(next) == null && request.manualAfterDestination.isBlank())) {
+            status = "POSSIBLE"; reasons += "location_unclear"
         }
         val safeEvents = events.map { e ->
             val p = selected.firstOrNull { it.id == e.calendarId }
             e.copy(title = e.title.takeIf { p?.showTitle == true }, location = e.location.takeIf { p?.showLocation == true }, description = e.description.takeIf { p?.showDescription == true })
         }.sortedBy { it.start }
-        val visibleOrigin = if (previousRelevant && previous != null && selected.firstOrNull { it.id == previous.calendarId }?.showLocation != true && usableLocation(previous) != null) "" else origin
-        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin)
+        val visibleOrigin = if (request.manualOrigin.isNotBlank()) origin else if (previousRelevant && previous != null && selected.firstOrNull { it.id == previous.calendarId }?.showLocation != true && usableLocation(previous) != null) "" else origin
+        val nextVisible = if (request.manualAfterDestination.isNotBlank()) request.manualAfterDestination else
+            afterLocation?.takeIf { selected.firstOrNull { p -> p.id == next?.calendarId }?.showLocation == true }.orEmpty()
+        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin, nextVisible)
     }
 }

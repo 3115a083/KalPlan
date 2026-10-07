@@ -129,7 +129,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                 .apply { clipData = android.content.ClipData.newRawUri("attachment", uri) }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))
         } }) { Text(tr("Laden und öffnen", "Download and open")) } }, dismissButton = { TextButton(onClick = { attachmentToOpen = null }) { Text(tr("Abbrechen", "Cancel")) } }) }
     if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW") } } })
-    if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, repository, busy, onRun, onDismiss = { routing = false })
+    if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, assessment?.nextLocation.orEmpty(), repository, busy, onRun, onDismiss = { routing = false })
     if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })
     if (dismiss) AlertDialog(onDismissRequest = { dismiss = false }, title = { Text(tr("Aus KalPlan entfernen?", "Dismiss from KalPlan?")) }, text = { Text(tr("Die Quellmail bleibt erhalten. Der Eintrag bleibt im Verlauf.", "The source email is preserved. The item stays in history.")) }, confirmButton = { TextButton(onClick = { dismiss = false; onRun { repository.request(request.id) { it.copy(status = "DISMISSED") }; onClose() } }) { Text(tr("Entfernen", "Dismiss")) } }, dismissButton = { TextButton(onClick = { dismiss = false }) { Text(tr("Abbrechen", "Cancel")) } })
 }
@@ -140,6 +140,7 @@ private fun EditCandidateDialog(request: StoredRequest, onDismiss: () -> Unit, o
     val initial = c?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
     var date by rememberSaveable { mutableStateOf(initial?.toLocalDate()?.toString().orEmpty()) }
     var time by rememberSaveable { mutableStateOf(initial?.toLocalTime()?.toString()?.take(5).orEmpty()) }
+    var offsetText by rememberSaveable { mutableStateOf("") }
     var duration by rememberSaveable { mutableStateOf((c?.durationMinutes ?: 60).toString()) }
     var location by rememberSaveable { mutableStateOf(c?.location.orEmpty()) }
     var online by rememberSaveable { mutableStateOf(c?.mode == "ONLINE") }
@@ -150,6 +151,7 @@ private fun EditCandidateDialog(request: StoredRequest, onDismiss: () -> Unit, o
             Text(tr("Prüfe Datum, Jahr und Uhrzeit anhand der Originalmail.", "Verify date, year and time against the original email."))
             EditField(tr("Datum (JJJJ-MM-TT)", "Date (YYYY-MM-DD)"), date) { date = it }
             EditField(tr("Uhrzeit (HH:MM)", "Time (HH:MM)"), time) { time = it }
+            EditField(tr("UTC-Offset bei Zeitumstellung, z. B. +02:00. Sonst leer.", "UTC offset for DST overlap, e.g. +02:00. Otherwise empty."), offsetText) { offsetText = it }
             EditField(tr("Dauer in Minuten", "Duration in minutes"), duration) { duration = it }
             EditField(tr("Ort", "Location"), location) { location = it }
             ToggleRow(tr("Online", "Online"), online) { online = it }
@@ -160,8 +162,10 @@ private fun EditCandidateDialog(request: StoredRequest, onDismiss: () -> Unit, o
         runCatching {
             val local = LocalDate.parse(date).atTime(LocalTime.parse(time))
             val offsets = ZoneId.systemDefault().rules.getValidOffsets(local)
-            require(offsets.size == 1)
-            val start = local.atOffset(offsets.single()).toInstant().toEpochMilli()
+            val offset = if (offsetText.isBlank()) { require(offsets.size == 1); offsets.single() } else {
+                ZoneOffset.of(offsetText).also { require(it in offsets) }
+            }
+            val start = local.atOffset(offset).toInstant().toEpochMilli()
             val minutes = duration.toInt(); require(minutes in 1..10080)
             onSave(StoredCandidate(start, start + minutes * 60_000L, minutes, false, "USER_OVERRIDE", location, if (online) "ONLINE" else "ONSITE", 1.0), labels.split(',').map { it.trim() }.filter { it.isNotBlank() }.distinct().take(30))
         }.onFailure { error = true }
@@ -198,6 +202,7 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
         Button(enabled = allowed && body.isNotBlank(), onClick = { confirm = true }) { Text(if (simulation) tr("Simulation prüfen", "Review simulation") else tr("Senden prüfen", "Review send")) }
         TextButton(enabled = !busy, onClick = onCancel) { Text(tr("Zurück", "Back")) }
         result?.let { Text(when(it) {
+            "send_blocked" -> tr("Versand vor der Übertragung gestoppt. Kalender und Kontoeinstellungen prüfen.", "Sending stopped before data transfer. Check calendars and account settings.")
             "delivery_unknown" -> tr("Versand ungewiss. Bitte zuerst im Mailkonto prüfen. Erneutes Senden ist gesperrt.", "Delivery uncertain. Check your mail account first. Resending is blocked.")
             "reservation_failed" -> tr("Antwort wurde gesendet. Kalenderreservierung ist fehlgeschlagen. Nicht erneut senden.", "Reply was sent. Calendar reservation failed. Do not resend.")
             "debug_simulated", "demo_no_send" -> tr("Simulation abgeschlossen. Keine Mail versendet, kein Kalender geändert.", "Simulation complete. No email sent or calendar changed.")
@@ -211,11 +216,13 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
 }
 
 @Composable
-private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: String, repository: AppRepository, busy: Boolean,
+private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: String, nextLocation: String, repository: AppRepository, busy: Boolean,
     onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var origin by rememberSaveable { mutableStateOf(originAddress) }
     var destination by rememberSaveable { mutableStateOf(if (request.candidate?.mode == "ONLINE") state.settings.originAddress else request.candidate?.location.orEmpty()) }
+    var afterDestination by rememberSaveable { mutableStateOf(request.manualAfterDestination.ifBlank { nextLocation }) }
+    var afterMinutes by rememberSaveable { mutableStateOf(request.travelAfterMinutes?.toString().orEmpty()) }
     var minutes by rememberSaveable { mutableStateOf(request.travelMinutes?.toString().orEmpty()) }
     var km by rememberSaveable { mutableStateOf(request.distanceKm?.toString().orEmpty()) }
     var provider by rememberSaveable { mutableStateOf(state.settings.routingProvider.takeIf { it in listOf("GOOGLE", "HERE", "TOMTOM", "ORS", "GRAPHHOPPER") } ?: "ORS") }
@@ -245,8 +252,22 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
             Text(tr("Tageslimit je Anbieter: ", "Daily limit per provider: ") + state.settings.routingDailyLimit)
             EditField(tr("Fahrtminuten zum Termin", "Travel minutes to appointment"), minutes) { minutes = it }
             EditField(tr("Entfernung, km", "Distance, km"), km) { km = it }
+            OutlinedButton(enabled = !busy, onClick = {
+                onRun {
+                    val o = RoutePoint.parse(oCoordinates); val d = RoutePoint.parse(dCoordinates)
+                    val estimate = cc.stkmn.kalplan.domain.proximity.ApproximateTravelEstimator().estimate(
+                        cc.stkmn.kalplan.domain.model.GeoPoint(o.latitude, o.longitude), cc.stkmn.kalplan.domain.model.GeoPoint(d.latitude, d.longitude))
+                    minutes = estimate.estimatedMinutesMax.toString(); km = estimate.estimatedRoadKmMax.toString()
+                }
+            }) { Text(tr("Grobe Offline-Näherung aus Koordinaten", "Coarse offline estimate from coordinates")) }
+            Text(tr("Die Offline-Näherung kennt keine Straßen oder Hindernisse. Prüfe die Fahrt selbst.", "The offline estimate does not know roads or obstacles. Review the trip yourself."), style = MaterialTheme.typography.bodySmall)
+            EditField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
+            EditField(tr("Fahrtminuten zum Folgetermin", "Travel minutes to following appointment"), afterMinutes) { afterMinutes = it }
         }
-    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis()) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
+    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis(),
+                manualOrigin = origin, manualAfterDestination = afterDestination,
+                travelAfterMinutes = afterMinutes.toIntOrNull()?.also { n -> require(n in 0..10080) },
+                travelAfterCheckedMillis = if (afterMinutes.toIntOrNull() != null) System.currentTimeMillis() else null) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
 }
 
 @Composable

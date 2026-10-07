@@ -54,16 +54,25 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         // Durable at-most-once fence. An SMTP timeout is delivery-unknown, never auto-retry.
         repository.request(id) { it.copy(status = "SENDING", replyId = message.messageID, failureCode = null) }
         var acknowledged = false
+        var attempted = false
         try {
             withContext(Dispatchers.IO) {
                 session.getTransport("smtp").use { transport ->
                     transport.connect(account.smtpHost, account.smtpPort, account.username, credential)
+                    // Recheck once connected, immediately before the SMTP DATA operation.
+                    if (accept) require(Planner(context, repository).assess(request).status == "FEASIBLE") { "Calendar changed before sending" }
+                    attempted = true
                     transport.sendMessage(message, message.allRecipients)
                     acknowledged = true
                 }
             }
         } catch (error: Exception) {
             if (!acknowledged) {
+                if (!attempted) {
+                    repository.request(id) { it.copy(status = request.status, replyId = null, failureCode = "send_blocked_before_data") }
+                    repository.log("smtp", "blocked_before_data")
+                    return@withLock "send_blocked"
+                }
                 repository.request(id) { it.copy(status = "DELIVERY_UNKNOWN", failureCode = error.javaClass.simpleName) }
                 repository.log("smtp", "delivery_unknown")
                 RequestSurfaces.updateWidgets(context)

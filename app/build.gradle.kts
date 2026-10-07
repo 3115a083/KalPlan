@@ -11,6 +11,7 @@ android {
     defaultConfig {
         applicationId = "cc.stkmn.kalplan"
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 37
         manifestPlaceholders["appAuthRedirectScheme"] = "cc.stkmn.kalplan"
         versionCode = 2
@@ -78,6 +79,11 @@ dependencies {
     implementation("com.google.re2j:re2j:1.8")
 
     implementation("net.openid:appauth:0.11.1")
+
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
 
     testImplementation("junit:junit:4.13.2")
 }

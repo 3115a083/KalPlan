@@ -40,6 +40,9 @@ fun appointmentTime(candidate: StoredCandidate?): String {
     "travel_unchecked" -> tr("Fahrt zum Termin noch ungeprüft", "Travel to appointment is unchecked")
     "travel_after_unchecked" -> tr("Fahrt zum Folgetermin noch ungeprüft", "Travel to the following event is unchecked")
     "travel_before" -> tr("Fahrt vor dem Termin passt nicht in die Lücke", "Travel before appointment exceeds the gap")
+    "travel_after" -> tr("Fahrt zum Folgetermin passt nicht in die Lücke", "Travel to the following event exceeds the gap")
+    "dst_time_ambiguous_or_invalid" -> tr("Zeitumstellung: UTC-Offset manuell bestätigen", "Daylight saving transition: confirm UTC offset manually")
+    "mime_limits_exceeded" -> tr("Mail überschreitet die sicheren Größen- oder MIME-Grenzen. Original im Mailprogramm prüfen.", "Email exceeds safe size or MIME limits. Check the original in your mail app.")
     "route_stale" -> tr("Fahrzeitschätzung ist älter als eine Stunde", "Travel estimate is over an hour old")
     "location_unclear" -> tr("Ort oder Durchführung unklar", "Location or meeting mode is unclear")
     else -> code

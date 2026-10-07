@@ -139,7 +139,11 @@ data class StoredRequest(
     val failureCode: String? = null,
     val travelMinutes: Int? = null,
     val distanceKm: Double? = null,
-    val routeCheckedMillis: Long? = null
+    val routeCheckedMillis: Long? = null,
+    val travelAfterMinutes: Int? = null,
+    val travelAfterCheckedMillis: Long? = null,
+    val manualOrigin: String = "",
+    val manualAfterDestination: String = ""
 ) {
     val pending: Boolean get() = status in setOf("NEW", "LATER", "UNCLEAR")
     val candidate: StoredCandidate? get() = selectedCandidate?.let { candidates.getOrNull(it) }

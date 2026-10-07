@@ -26,7 +26,8 @@ object AngusSessionFactory {
         Properties().apply {
             require(config.host.isNotBlank() && config.host.length <= 253 && !config.host.any { it.isWhitespace() || it == '/' }) { "Invalid mail host" }
             require(config.port in 1..65535) { "Invalid port" }
-            put("$prefix.ssl.protocols", "TLSv1.2 TLSv1.3")
+            put("$prefix.ssl.protocols", javax.net.ssl.SSLContext.getDefault().supportedSSLParameters.protocols
+                .filter { it == "TLSv1.2" || it == "TLSv1.3" }.joinToString(" ").also { require(it.isNotBlank()) })
             put("$prefix.host", config.host)
             put("$prefix.port", config.port.toString())
             put("$prefix.connectiontimeout", "10000")
