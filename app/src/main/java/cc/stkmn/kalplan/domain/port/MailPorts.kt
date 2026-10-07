@@ -22,7 +22,8 @@ data class MailAttachmentMeta(
     val sizeBytes: Int?,
     val disposition: String?,
     val contentId: String?,
-    val inline: Boolean
+    val inline: Boolean,
+    val partPath: String = ""
 )
 
 data class MailMessageSnapshot(

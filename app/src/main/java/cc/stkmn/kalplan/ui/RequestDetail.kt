@@ -33,6 +33,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
     var routing by rememberSaveable(request.id) { mutableStateOf(false) }
     var guided by rememberSaveable(request.id) { mutableStateOf(false) }
     var dismiss by remember { mutableStateOf(false) }
+    var attachmentToOpen by remember { mutableStateOf<StoredAttachment?>(null) }
     LaunchedEffect(request, state.calendars, state.settings) { assessment = runCatching { planner.assess(request) }.getOrNull() }
     if (replyAction != null) {
         ReplyComposer(request, replyAction == "accept", state, repository, busy, onRun, onDone = { onAction(null) }, onCancel = { onAction(null) })
@@ -97,7 +98,8 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                         else -> request.attachmentMeta.filterNot { it.inline && it.mime.startsWith("image/") && (it.size ?: 0) < 150_000 }
                     }
                     if (files.isEmpty()) Text(tr("Keine relevanten Anhänge.", "No relevant attachments."))
-                    files.forEach { file -> ListItem(headlineContent = { Text(file.name) }, supportingContent = { Text(file.mime + " · " + (file.size?.let { "${it / 1024} KB" } ?: "?")) }) }
+                    files.forEach { file -> ListItem(headlineContent = { Text(file.name) }, supportingContent = { Text(file.mime + " · " + (file.size?.let { "${it / 1024} KB" } ?: "?")) },
+                        trailingContent = { TextButton(enabled = !busy && request.accountId.isNotBlank(), onClick = { attachmentToOpen = file }) { Text(tr("Öffnen", "Open")) } }) }
                     Text(tr("Anhänge werden nicht automatisch analysiert.", "Attachments are never analyzed automatically."), style = MaterialTheme.typography.bodySmall)
                 }
                 3 -> {
@@ -113,6 +115,19 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             Spacer(Modifier.height(32.dp))
         }
     }
+    attachmentToOpen?.let { file -> AlertDialog(onDismissRequest = { attachmentToOpen = null }, title = { Text(tr("Anhang extern öffnen?", "Open attachment externally?")) },
+        text = { Text(file.name + "\n" + tr("Die gewählte Viewer-App erhält Zugriff auf diese Datei. Maximal 10 MB, keine automatische Analyse.", "The selected viewer app will receive access to this file. Maximum 10 MB, no automatic analysis.")) },
+        confirmButton = { TextButton(enabled = !busy, onClick = { attachmentToOpen = null; onRun {
+            val directory = java.io.File(context.cacheDir, "attachments").apply { mkdirs() }
+            directory.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 86_400_000 }?.forEach { it.delete() }
+            val extension = when(file.mime.lowercase()) { "application/pdf" -> ".pdf"; "image/png" -> ".png"; "image/jpeg" -> ".jpg"; "text/plain" -> ".txt"; else -> ".bin" }
+            val target = java.io.File(directory, UUID.randomUUID().toString() + extension)
+            val providers = cc.stkmn.kalplan.infrastructure.mail.AccountProviders(repository)
+            cc.stkmn.kalplan.infrastructure.mail.AngusMailReader(providers, providers).downloadAttachment(cc.stkmn.kalplan.domain.port.MailFolderRef(request.accountId, request.folder), request.id, file.partPath, target)
+            val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
+            context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, file.mime)
+                .setClipData(android.content.ClipData.newRawUri("attachment", uri)).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))
+        } }) { Text(tr("Laden und öffnen", "Download and open")) } }, dismissButton = { TextButton(onClick = { attachmentToOpen = null }) { Text(tr("Abbrechen", "Cancel")) } }) }
     if (editing) EditCandidateDialog(request, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW") } } })
     if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, repository, busy, onRun, onDismiss = { routing = false })
     if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })

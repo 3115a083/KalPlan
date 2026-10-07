@@ -12,6 +12,7 @@ android {
         applicationId = "cc.stkmn.kalplan"
         minSdk = 26
         targetSdk = 37
+        manifestPlaceholders["appAuthRedirectScheme"] = "cc.stkmn.kalplan"
         versionCode = 2
         versionName = "0.2.0-dev"
     }
@@ -75,6 +76,8 @@ dependencies {
 
     implementation("org.jsoup:jsoup:1.23.2")
     implementation("com.google.re2j:re2j:1.8")
+
+    implementation("net.openid:appauth:0.11.1")
 
     testImplementation("junit:junit:4.13.2")
 }

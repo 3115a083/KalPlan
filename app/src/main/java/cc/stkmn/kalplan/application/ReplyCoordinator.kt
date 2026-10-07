@@ -35,7 +35,7 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         val source = AngusMailReader(providers, providers).loadMessage(MailFolderRef(account.id, request.folder), request.id)
         require(source.envelope.messageId == request.messageId && source.envelope.sender == request.sender)
         if (!settings.debug) require(ReplyPolicy.address(source.envelope.replyTo ?: source.envelope.sender) == recipient)
-        val credential = repository.secret(account.id, true)
+        val credential = if (account.authMode == "XOAUTH2") cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.accessToken(context, repository, account.id) else repository.secret(account.id, true)
         val session = AngusSessionFactory.smtp(account.runtime().outgoing)
         val message = MimeMessage(session).apply {
             setFrom(InternetAddress(ReplyPolicy.address(account.address)))

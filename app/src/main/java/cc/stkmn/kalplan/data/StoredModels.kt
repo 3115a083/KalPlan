@@ -18,7 +18,12 @@ data class MailAccount(
     val folders: List<String> = listOf("INBOX"),
     val signature: String = "",
     val enabled: Boolean = true,
-    val folderProfiles: Map<String, String> = emptyMap()
+    val folderProfiles: Map<String, String> = emptyMap(),
+    val authMode: String = "PASSWORD",
+    val oauthClientId: String = "",
+    val oauthAuthorizationEndpoint: String = "",
+    val oauthTokenEndpoint: String = "",
+    val oauthScope: String = ""
 )
 
 @Serializable
@@ -140,7 +145,7 @@ data class StoredRequest(
     val candidate: StoredCandidate? get() = selectedCandidate?.let { candidates.getOrNull(it) }
 }
 @Serializable
-data class StoredAttachment(val name: String, val mime: String, val size: Int?, val inline: Boolean)
+data class StoredAttachment(val name: String, val mime: String, val size: Int?, val inline: Boolean, val partPath: String = "")
 @Serializable
 data class Budget(val date: String, val used: Int)
 @Serializable

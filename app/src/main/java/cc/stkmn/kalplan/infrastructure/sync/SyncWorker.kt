@@ -42,21 +42,32 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                         val key = account.id + "|" + folder
                         val cursor = repository.data.value.cursors[key]
                         val batch = reader.listIncremental(MailFolderRef(account.id, folder), cursor, 100)
-                        val newIds = mutableListOf<String>()
-                        for (envelope in batch.envelopes) {
-                            if (repository.data.value.requests.any { it.id == envelope.stableId }) continue
-                            val message = reader.loadMessage(MailFolderRef(account.id, folder), envelope.stableId)
+                        val newRequests = mutableListOf<StoredRequest>()
+                        val unseen = batch.envelopes.filterNot { e -> repository.data.value.requests.any { it.id == e.stableId } }
+                        val messages = if (unseen.isEmpty()) emptyList() else reader.loadBatch(MailFolderRef(account.id, folder), unseen)
+                        for (item in messages) {
+                            val envelope = item.envelope
+                            if (item.exceededLimits) {
+                                newRequests += StoredRequest(id = envelope.stableId, accountId = account.id, folder = folder,
+                                    messageId = envelope.messageId, sender = envelope.sender, recipient = envelope.replyTo ?: envelope.sender,
+                                    subject = envelope.subject, body = "", receivedMillis = envelope.receivedAt.toEpochMilli(),
+                                    issues = listOf("mime_limits_exceeded"), unclear = true)
+                                repository.log("mime", "limits_exceeded")
+                                continue
+                            }
+                            val message = requireNotNull(item.snapshot)
                             val profile = repository.data.value.profiles.firstOrNull { it.id == account.folderProfiles[folder] }
                             val body = message.plainText ?: cc.stkmn.kalplan.extraction.MailTextNormalizer().htmlToText(message.htmlText.orEmpty())
-                            val request = RequestFactory.create(envelope.stableId, envelope.sender, envelope.subject, body.take(512_000), envelope.receivedAt.toEpochMilli(), repository.data.value, profile)
+                            newRequests += RequestFactory.create(envelope.stableId, envelope.sender, envelope.subject, body.take(512_000), envelope.receivedAt.toEpochMilli(), repository.data.value, profile)
                                 .copy(accountId = account.id, folder = folder, messageId = envelope.messageId,
                                     recipient = envelope.replyTo ?: envelope.sender,
-                                    attachmentMeta = message.attachments.map { StoredAttachment(it.fileName ?: "attachment", it.mimeType, it.sizeBytes, it.inline) })
-                            repository.update { it.copy(requests = it.requests + request) }
-                            newIds += request.id
+                                    attachmentMeta = message.attachments.map { StoredAttachment(it.fileName ?: "attachment", it.mimeType, it.sizeBytes, it.inline, it.partPath) })
                         }
-                        // Advance only after every fetched message is committed. Failure leaves cursor untouched.
-                        repository.update { it.copy(cursors = it.cursors + (key to batch.cursor)) }
+                        // One durable write per folder batch, including cursor. No per-message full-store rewrites.
+                        repository.update { current -> current.copy(
+                            requests = current.requests + newRequests.filterNot { r -> current.requests.any { it.id == r.id } },
+                            cursors = current.cursors + (key to batch.cursor)) }
+                        val newIds = newRequests.map { it.id }
                         for (id in newIds) RequestSurfaces.notify(context, id)
                         hasMore = hasMore || batch.hasMore
                     } catch (error: kotlinx.coroutines.CancellationException) { throw error }

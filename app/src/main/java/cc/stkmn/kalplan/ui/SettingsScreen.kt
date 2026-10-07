@@ -99,7 +99,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             ToggleRow(tr("Aktiv", "Enabled"), a.enabled) { enabled -> onRun { repository.update { it.copy(accounts = it.accounts.map { old -> if (old.id == a.id) old.copy(enabled = enabled) else old }) } } }
         }
         OutlinedButton(enabled = !busy, onClick = { newAccount = true }) { Text(tr("Konto hinzufügen", "Add account")) }
-        Text(tr("Generische Server: Passwort oder App-Passwort. OAuth-Anmeldung wird noch nicht angeboten.", "Generic servers: password or app password. OAuth sign-in is not offered yet."), style = MaterialTheme.typography.bodySmall)
+        Text(tr("Passwort/App-Passwort oder OAuth mit registrierter nativer Client-ID. Keine fest eingebauten Provider-Schlüssel.", "Password/app password or OAuth with a registered native client ID. No embedded provider credentials."), style = MaterialTheme.typography.bodySmall)
         SectionTitle(tr("Extraktionsprofile", "Extraction profiles"))
         state.profiles.forEach { p ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -245,7 +245,13 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
 
 @Composable
 private fun AccountDialog(existing: MailAccount?, state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
     val id = remember { existing?.id ?: UUID.randomUUID().toString() }
+    var authMode by rememberSaveable { mutableStateOf(existing?.authMode ?: "PASSWORD") }
+    var clientId by rememberSaveable { mutableStateOf(existing?.oauthClientId.orEmpty()) }
+    var authorizationEndpoint by rememberSaveable { mutableStateOf(existing?.oauthAuthorizationEndpoint.orEmpty()) }
+    var tokenEndpoint by rememberSaveable { mutableStateOf(existing?.oauthTokenEndpoint.orEmpty()) }
+    var oauthScope by rememberSaveable { mutableStateOf(existing?.oauthScope.orEmpty()) }
     var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
     var username by rememberSaveable { mutableStateOf(existing?.username.orEmpty()) }
     var address by rememberSaveable { mutableStateOf(existing?.address.orEmpty()) }
@@ -267,10 +273,15 @@ private fun AccountDialog(existing: MailAccount?, state: AppData, repository: Ap
         require(username.isNotBlank() && name.isNotBlank())
         require(imap.isNotBlank() && smtp.isNotBlank() && !imap.any { it.isWhitespace() || it == '/' } && !smtp.any { it.isWhitespace() || it == '/' })
         require(imapPort.toInt() in 1..65535 && smtpPort.toInt() in 1..65535)
-        require(existing != null || password.isNotBlank())
+        require(authMode == "XOAUTH2" || existing != null || password.isNotBlank())
+        if (authMode == "XOAUTH2") {
+            require(clientId.isNotBlank() && oauthScope.isNotBlank())
+            cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.httpsEndpoint(authorizationEndpoint)
+            cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.httpsEndpoint(tokenEndpoint)
+        }
         val selected = folders.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
         require(selected.isNotEmpty() && selected.size <= 20)
-        return MailAccount(id, name, username, address, imap, imapPort.toInt(), incomingStartTls, smtp, smtpPort.toInt(), outgoingStartTls, selected, signature, existing?.enabled ?: true, folderProfiles)
+        return MailAccount(id, name, username, address, imap, imapPort.toInt(), incomingStartTls, smtp, smtpPort.toInt(), outgoingStartTls, selected, signature, existing?.enabled ?: true, folderProfiles, authMode, clientId, authorizationEndpoint, tokenEndpoint, oauthScope)
     }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Mailkonto", "Mail account")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -284,8 +295,28 @@ private fun AccountDialog(existing: MailAccount?, state: AppData, repository: Ap
             EditField("SMTP Port", smtpPort) { smtpPort = it }
             ToggleRow("SMTP STARTTLS", outgoingStartTls) { outgoingStartTls = it }
             Text(tr("Ohne STARTTLS gilt implizites TLS. Zertifikate und Hostnamen werden immer geprüft.", "Without STARTTLS, implicit TLS is used. Certificates and hostnames are always verified."), style = MaterialTheme.typography.bodySmall)
-            SecretField(tr("IMAP-Passwort, leer = beibehalten", "IMAP password, empty = keep"), password) { password = it }
-            SecretField(tr("SMTP-Passwort, leer = IMAP-Passwort / beibehalten", "SMTP password, empty = IMAP password / keep"), outgoingPassword) { outgoingPassword = it }
+            ChoiceRow(listOf("PASSWORD", "XOAUTH2"), authMode) { authMode = it }
+            if (authMode == "XOAUTH2") {
+                Text(tr("Erweiterte Einrichtung: Registriere KalPlan als nativen öffentlichen Client bei deinem Anbieter. Redirect: ", "Advanced setup: register KalPlan as a native public client with your provider. Redirect: ") + cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.REDIRECT)
+                EditField("Client-ID", clientId) { clientId = it }
+                EditField("Authorization endpoint (HTTPS)", authorizationEndpoint) { authorizationEndpoint = it }
+                EditField("Token endpoint (HTTPS)", tokenEndpoint) { tokenEndpoint = it }
+                EditField("Scopes", oauthScope) { oauthScope = it }
+                OutlinedButton(onClick = {
+                    authorizationEndpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+                    tokenEndpoint = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+                    oauthScope = "offline_access https://outlook.office.com/IMAP.AccessAsUser.All https://outlook.office.com/SMTP.Send"
+                }) { Text(tr("Microsoft-Endpunkte verwenden", "Use Microsoft endpoints")) }
+                Button(enabled = !busy, onClick = {
+                    runCatching { val a = account(); onRun {
+                        repository.saveAccount(a, "", "")
+                        context.startActivity(Intent(context, cc.stkmn.kalplan.infrastructure.oauth.OAuthActivity::class.java).putExtra("account_id", id))
+                    } }.onFailure { feedback = "OAuth-Konfiguration prüfen / Check OAuth setup" }
+                }) { Text(tr("Speichern und mit OAuth anmelden", "Save and sign in with OAuth")) }
+            } else {
+                SecretField(tr("IMAP-Passwort, leer = beibehalten", "IMAP password, empty = keep"), password) { password = it }
+                SecretField(tr("SMTP-Passwort, leer = IMAP-Passwort / beibehalten", "SMTP password, empty = IMAP password / keep"), outgoingPassword) { outgoingPassword = it }
+            }
             EditField(tr("Überwachte Ordner, ein Pfad pro Zeile", "Watched folders, one path per line"), folders) { folders = it }
             OutlinedButton(enabled = !busy, onClick = {
                 runCatching { val a = account(); onRun {

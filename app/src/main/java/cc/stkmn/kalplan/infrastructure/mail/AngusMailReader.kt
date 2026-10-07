@@ -104,6 +104,29 @@ class AngusMailReader(
         }
     }
 
+    data class BatchMessage(val envelope: MailEnvelope, val snapshot: MailMessageSnapshot?, val exceededLimits: Boolean = false)
+    suspend fun loadBatch(folder: MailFolderRef, envelopes: List<MailEnvelope>): List<BatchMessage> =
+        withConnectedStore(folder.accountId) { store ->
+            require(envelopes.size <= 200)
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                val keys = envelopes.map { StableImapKey.parse(it.stableId) }
+                require(keys.all { it.accountId == folder.accountId && it.folderPath == folder.path && it.uidValidity == uids.uidValidity })
+                val messages = uids.getMessagesByUID(keys.map { it.uid }.toLongArray())
+                prefetch(mailFolder, messages)
+                val byUid = messages.associateBy { uids.getUID(it) }
+                envelopes.mapIndexed { index, envelope ->
+                    val message = byUid[keys[index].uid] ?: error("Source changed during sync")
+                    try {
+                        val content = mimeTextExtractor.extract(message)
+                        BatchMessage(envelope, MailMessageSnapshot(envelope, content.plainText, content.htmlText, content.attachments))
+                    } catch (_: MimeLimitException) { BatchMessage(envelope, null, true) }
+                }
+            } finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
+
     override suspend fun loadMessage(
         folder: MailFolderRef,
         stableId: String
@@ -138,6 +161,40 @@ class AngusMailReader(
             }
         }
     }
+
+    suspend fun downloadAttachment(folder: MailFolderRef, stableId: String, path: String, output: java.io.File): Unit =
+        withConnectedStore(folder.accountId) { store ->
+            val key = StableImapKey.parse(stableId)
+            require(key.accountId == folder.accountId && key.folderPath == folder.path)
+            val segments = if (path.isBlank()) emptyList() else path.split('/').map { it.toInt() }
+            require(segments.size <= 16 && segments.all { it in 0..199 })
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                require(uids.uidValidity == key.uidValidity)
+                var part: jakarta.mail.Part = uids.getMessageByUID(key.uid) ?: error("Source message unavailable")
+                for (index in segments) {
+                    val multipart = part.content as? jakarta.mail.Multipart ?: error("Attachment structure changed")
+                    require(index < multipart.count)
+                    part = multipart.getBodyPart(index)
+                }
+                require(part.size <= 10 * 1024 * 1024) { "Attachment size limit" }
+                part.inputStream.use { input ->
+                    output.outputStream().use { target ->
+                        var count = 0L
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            count += n; require(count <= 10 * 1024 * 1024) { "Attachment size limit" }
+                            target.write(buffer, 0, n)
+                        }
+                    }
+                }
+            } catch (error: Exception) { output.delete(); throw error }
+            finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
 
     private suspend fun <T> withConnectedStore(
         accountId: String,

@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class AppRepository private constructor(context: Context) {
+class AppRepository private constructor(val context: Context) {
     private val vault = EncryptedStore(context.applicationContext)
     private val mutex = Mutex()
     val syncMutex = Mutex()
@@ -56,11 +56,16 @@ class AppRepository private constructor(context: Context) {
         }
         update { it.copy(accounts = it.accounts.filterNot { old -> old.id == account.id } + account) }
     }
+    suspend fun oauthState(id: String): String? = withContext(Dispatchers.IO) { vault.read("oauth_" + id) }
+    suspend fun saveOAuthState(id: String, state: String) = withContext(Dispatchers.IO) { vault.write("oauth_" + id, state) }
+    suspend fun oauthPending(id: String): String? = withContext(Dispatchers.IO) { vault.read("oauth_pending_" + id) }
+    suspend fun saveOAuthPending(id: String, request: String) = withContext(Dispatchers.IO) { vault.write("oauth_pending_" + id, request) }
+    suspend fun clearOAuthPending(id: String) = withContext(Dispatchers.IO) { vault.remove("oauth_pending_" + id) }
     suspend fun routingKey(provider: String): String = withContext(Dispatchers.IO) { vault.read("route_" + provider) ?: "" }
     suspend fun saveRoutingKey(provider: String, key: String) = withContext(Dispatchers.IO) { vault.write("route_" + provider, key) }
     suspend fun removeAccount(id: String) {
         update { it.copy(accounts = it.accounts.filterNot { a -> a.id == id }) }
-        withContext(Dispatchers.IO) { vault.remove("secret_" + id + "_imap"); vault.remove("secret_" + id + "_smtp") }
+        withContext(Dispatchers.IO) { vault.remove("secret_" + id + "_imap"); vault.remove("secret_" + id + "_smtp"); vault.remove("oauth_" + id); vault.remove("oauth_pending_" + id) }
     }
     suspend fun log(service: String, code: String) = update {
         // Codes only, never exception.message, addresses, hosts, URLs or message text.
