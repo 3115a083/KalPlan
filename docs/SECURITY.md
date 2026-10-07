@@ -49,3 +49,16 @@ Calendar writes are simulated by default in debug mode.
 ## Destructive actions
 
 Future mail deletion means Move to Trash only. Never EXPUNGE as part of ordinary operation.
+
+
+## Least privilege during implementation
+
+The current scaffold requests only READ_CALENDAR. WRITE_CALENDAR will be added only when the reservation writer is implemented.
+
+IMAP reading uses:
+- Folder.READ_ONLY.
+- `mail.imap.peek=true`.
+- UID + UIDVALIDITY stable keys.
+- bounded result counts.
+- text extraction caps.
+- attachment metadata only unless a later explicit attachment action requests content.

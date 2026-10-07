@@ -8,6 +8,7 @@ object AngusSessionFactory {
         val prefix = "mail.imap"
         return Session.getInstance(baseProperties(prefix, config).apply {
             put("mail.store.protocol", "imap")
+            put("$prefix.peek", "true")
             configureAuth(prefix, config.authMode)
         })
     }

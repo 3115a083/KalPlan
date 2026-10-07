@@ -8,6 +8,13 @@ data class CalendarRef(
     val colorArgb: Int?
 )
 
+enum class CalendarBusyStatus {
+    BUSY,
+    FREE,
+    TENTATIVE,
+    UNKNOWN
+}
+
 data class CalendarEventRef(
     val id: String,
     val calendarId: String,
@@ -15,7 +22,9 @@ data class CalendarEventRef(
     val end: Instant,
     val title: String?,
     val location: String?,
-    val description: String?
+    val description: String?,
+    val allDay: Boolean,
+    val busyStatus: CalendarBusyStatus
 )
 
 data class ReservationDraft(
@@ -27,8 +36,16 @@ data class ReservationDraft(
     val description: String?
 )
 
-interface CalendarGateway {
+interface CalendarReader {
     suspend fun calendars(): List<CalendarRef>
-    suspend fun events(from: Instant, to: Instant, calendarIds: Set<String>): List<CalendarEventRef>
+
+    suspend fun events(
+        from: Instant,
+        to: Instant,
+        calendarIds: Set<String>
+    ): List<CalendarEventRef>
+}
+
+interface ReservationWriter {
     suspend fun createReservation(draft: ReservationDraft): String
 }
