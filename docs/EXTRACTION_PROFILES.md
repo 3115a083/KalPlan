@@ -127,3 +127,30 @@ Current local heuristics cover:
 No network request is needed for extraction.
 
 The offline postcode/city index can later validate or enrich place-name candidates before routing.
+
+
+## JSON import and export
+
+Profiles can be encoded as human-readable JSON with `ExtractionProfileCodec`.
+
+Before a decoded profile can be used, `ProfileValidator` checks:
+- supported schema version.
+- non-empty id and name.
+- duplicate matcher ids.
+- duplicate extractor ids.
+- duplicate extractor keys.
+- invalid matcher/extractor regex.
+- invalid capture-group numbers.
+- confidence range.
+- references to variables that do not exist yet.
+
+Unknown JSON fields are ignored for forward-compatible imports, while unsupported schema versions are rejected.
+
+Transform objects use a `type` discriminator such as:
+- `trim`
+- `prefix`
+- `suffix`
+- `change_case`
+- `regex_replace`
+
+Import errors are returned as generic validation errors. Raw customer/profile JSON must not be copied into production logs.
