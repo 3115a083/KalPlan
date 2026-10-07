@@ -18,12 +18,12 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
         return try {
             repository.load()
             if (PlanningPolicy.syncPaused(repository.data.value.settings) && !inputData.getBoolean("manual", false)) {
-                SyncScheduler.scheduleFrequent(applicationContext, repository.data.value.settings.syncMinutes)
+                if (inputData.getBoolean("frequent", false)) SyncScheduler.scheduleFrequent(applicationContext, repository.data.value.settings.syncMinutes)
                 return Result.success()
             }
             val success = sync(applicationContext, repository)
             if (success) {
-                SyncScheduler.scheduleFrequent(applicationContext, repository.data.value.settings.syncMinutes)
+                if (inputData.getBoolean("frequent", false)) SyncScheduler.scheduleFrequent(applicationContext, repository.data.value.settings.syncMinutes)
                 Result.success()
             } else Result.retry()
         } catch (error: kotlinx.coroutines.CancellationException) { throw error }
@@ -103,7 +103,7 @@ object SyncScheduler {
     fun scheduleFrequent(context: Context, minutes: Int) {
         if (minutes !in 5..14) return
         WorkManager.getInstance(context).enqueueUniqueWork("kalplan-frequent", ExistingWorkPolicy.APPEND_OR_REPLACE,
-            OneTimeWorkRequestBuilder<SyncWorker>().setInitialDelay(minutes.toLong(), TimeUnit.MINUTES)
+            OneTimeWorkRequestBuilder<SyncWorker>().setInputData(workDataOf("frequent" to true)).setInitialDelay(minutes.toLong(), TimeUnit.MINUTES)
                 .setConstraints(constraints).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build())
     }
     fun manual(context: Context) = WorkManager.getInstance(context).enqueueUniqueWork("kalplan-manual", ExistingWorkPolicy.KEEP,

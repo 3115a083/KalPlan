@@ -19,6 +19,12 @@ class AppSmokeTest {
         screenshot("list")
         compose.onNodeWithText("Praxis Beispiel").performClick()
         compose.onNodeWithText("Sample, sending disabled").assertDoesNotExist()
+        screenshot("detail")
+        compose.onNodeWithText("Edit details").performScrollTo().performClick()
+        compose.onNodeWithText("Date (YYYY-MM-DD)").performTextReplacement(java.time.LocalDate.now().plusDays(1).toString())
+        compose.onNodeWithText("Time (HH:MM)").performTextReplacement("14:00")
+        compose.onNodeWithText("Confirm details").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Accept").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Accept").performScrollTo().performClick()
         compose.onNodeWithText("Review simulation").performScrollTo().performClick()
         compose.onNodeWithText("Confirm simulation").assertExists()

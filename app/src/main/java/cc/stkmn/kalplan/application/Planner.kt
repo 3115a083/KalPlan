@@ -33,7 +33,8 @@ class Planner(private val context: Context, private val repository: AppRepositor
             selected.map { it.id }.toSet()
         ).filterNot { event -> request.reservationEventId != null && event.id.substringBefore('@') == request.reservationEventId }
         val localReservations = repository.data.value.requests.filter {
-            it.id != request.id && it.status in setOf("RESERVED", "RESERVATION_FAILED") && it.reservationEventId == null
+            it.id != request.id && it.status in setOf("RESERVED", "RESERVATION_FAILED") &&
+                (it.reservationEventId == null || raw.none { e -> e.id.substringBefore('@') == it.reservationEventId })
         }.mapNotNull { r -> r.candidate?.let { c ->
             if (c.startMillis == null || c.endMillis == null) null else CalendarEventRef(
                 "local:${r.id}", "local", Instant.ofEpochMilli(c.startMillis), Instant.ofEpochMilli(c.endMillis),

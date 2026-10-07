@@ -14,7 +14,7 @@ Android app for reviewing appointment requests, checking device calendars and pl
 Notifications and a resizable scrollable Android widget open the review screen. IMAP source mail remains read-only. Attachments are downloaded only on request. Debug controls are behind five quick taps on the footer; mail defaults to simulation and calendar writes are blocked.
 
 ## Build and validation
-Pinned Gradle wrapper, Java 17, Kotlin 2.4.10, AGP 9.4.0, target/compile API 37. CI performs unit tests, Android Lint, resolved-dependency OSV lookup, APK assembly and device smoke tests with screenshots on minimum/target APIs.
+Pinned Gradle wrapper, Java 17, Kotlin 2.4.10, AGP 9.4.0, target/compile API 37. CI performs unit tests, Android Lint, resolved-dependency OSV lookup, APK assembly and device smoke tests with screenshots on minimum/newest available emulator APIs.
 ```sh
 ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
