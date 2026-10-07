@@ -10,7 +10,6 @@ plugins {
 android {
     namespace = "cc.stkmn.kalplan"
     compileSdk = 37
-    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/dependency-notices"))
 
     defaultConfig {
         applicationId = "cc.stkmn.kalplan"
@@ -108,9 +107,15 @@ tasks.register("dependencyInventory") {
 
 
 // Preserve notices from all exact runtime archives, including nested AAR jars.
-val bundleDependencyNotices = tasks.register("bundleDependencyNotices") {
+abstract class DependencyNoticeTask : DefaultTask() {
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+}
+
+val bundleDependencyNotices = tasks.register<DependencyNoticeTask>("bundleDependencyNotices") {
     val runtime = configurations.named("debugRuntimeClasspath")
-    val output = layout.buildDirectory.dir("generated/dependency-notices")
+    outputDirectory.set(layout.buildDirectory.dir("generated/dependency-notices"))
+    val output = outputDirectory
     inputs.files(runtime)
     outputs.dir(output)
     doLast {
@@ -154,4 +159,6 @@ val bundleDependencyNotices = tasks.register("bundleDependencyNotices") {
         logger.lifecycle("Bundled {} dependency notice/license entries.", counter)
     }
 }
-tasks.named("preBuild") { dependsOn(bundleDependencyNotices) }
+androidComponents.onVariants { variant ->
+    variant.sources.assets?.addGeneratedSourceDirectory(bundleDependencyNotices, DependencyNoticeTask::outputDirectory)
+}
