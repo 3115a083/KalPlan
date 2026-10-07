@@ -1,3 +1,6 @@
+import java.io.File
+import java.util.zip.ZipFile
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
@@ -117,8 +120,8 @@ val bundleDependencyNotices = tasks.register("bundleDependencyNotices") {
         val temporary = layout.buildDirectory.dir("notice-tmp").get().asFile.apply { mkdirs() }
         val inventory = mutableListOf<String>()
         var counter = 0
-        fun copyNotices(archive: java.io.File, component: String, nested: Boolean = false) {
-            java.util.zip.ZipFile(archive).use { zip ->
+        fun copyNotices(archive: File, component: String, nested: Boolean = false) {
+            ZipFile(archive).use { zip ->
                 val entries = zip.entries().asSequence().toList()
                 for (entry in entries.filter { !it.isDirectory }) {
                     val name = entry.name.substringAfterLast('/').uppercase()
@@ -133,7 +136,7 @@ val bundleDependencyNotices = tasks.register("bundleDependencyNotices") {
                     }
                     if (!nested && archive.extension == "aar" && (entry.name == "classes.jar" || entry.name.startsWith("libs/") && entry.name.endsWith(".jar"))) {
                         require(entry.size <= 100_000_000) { "Nested dependency archive exceeds limit" }
-                        val jar = java.io.File.createTempFile("notice-", ".jar", temporary)
+                        val jar = File.createTempFile("notice-", ".jar", temporary)
                         try {
                             zip.getInputStream(entry).use { input -> jar.outputStream().use { input.copyTo(it) } }
                             copyNotices(jar, component, true)
