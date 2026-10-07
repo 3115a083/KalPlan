@@ -3,6 +3,7 @@ package cc.stkmn.kalplan.ui
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.*
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -230,7 +231,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
             EditField(tr("Fahrtminuten zum Termin", "Travel minutes to appointment"), minutes) { minutes = it }
             EditField(tr("Entfernung, km", "Distance, km"), km) { km = it }
         }
-    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull() in 0..10080 && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis()) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
+    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis()) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
 }
 
 @Composable

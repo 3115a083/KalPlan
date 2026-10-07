@@ -33,7 +33,7 @@ class Planner(private val context: Context, private val repository: AppRepositor
             selected.map { it.id }.toSet()
         ).filterNot { event -> request.reservationEventId != null && event.id.substringBefore('@') == request.reservationEventId }
         val localReservations = repository.data.value.requests.filter {
-            it.id != request.id && it.status == "RESERVED" && it.reservationEventId == null
+            it.id != request.id && it.status in setOf("RESERVED", "RESERVATION_FAILED") && it.reservationEventId == null
         }.mapNotNull { r -> r.candidate?.let { c ->
             if (c.startMillis == null || c.endMillis == null) null else CalendarEventRef(
                 "local:${r.id}", "local", Instant.ofEpochMilli(c.startMillis), Instant.ofEpochMilli(c.endMillis),
@@ -67,7 +67,7 @@ class Planner(private val context: Context, private val repository: AppRepositor
             if (travel != null && request.routeCheckedMillis != null) {
                 val gap = conflict.nearestGapBeforeMinutes
                 if (gap != null && gap < travel + settings.beforeBuffer) { status = "CONFLICT"; reasons += "travel_before" }
-                if (System.currentTimeMillis() - request.routeCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
+                if (status != "CONFLICT" && System.currentTimeMillis() - request.routeCheckedMillis > 3_600_000) { status = "POSSIBLE"; reasons += "route_stale" }
             } else { status = "POSSIBLE"; reasons += "travel_unchecked" }
         }
         if (status != "CONFLICT" && (afterTravel || candidate.mode == "UNKNOWN" || destination.isBlank())) {
@@ -77,6 +77,7 @@ class Planner(private val context: Context, private val repository: AppRepositor
             val p = selected.firstOrNull { it.id == e.calendarId }
             e.copy(title = e.title.takeIf { p?.showTitle == true }, location = e.location.takeIf { p?.showLocation == true }, description = e.description.takeIf { p?.showDescription == true })
         }.sortedBy { it.start }
-        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, origin)
+        val visibleOrigin = if (previousRelevant && previous != null && selected.firstOrNull { it.id == previous.calendarId }?.showLocation != true && usableLocation(previous) != null) "" else origin
+        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin)
     }
 }

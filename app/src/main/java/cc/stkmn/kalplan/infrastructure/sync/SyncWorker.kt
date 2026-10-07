@@ -35,6 +35,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
             val providers = AccountProviders(repository)
             val reader = AngusMailReader(providers, providers)
             var success = true
+            var hasMore = false
             for (account in repository.data.value.accounts.filter { it.enabled }) {
                 for (folder in account.folders.distinct()) {
                     try {
@@ -57,11 +58,12 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                         // Advance only after every fetched message is committed. Failure leaves cursor untouched.
                         repository.update { it.copy(cursors = it.cursors + (key to batch.cursor)) }
                         for (id in newIds) RequestSurfaces.notify(context, id)
-                        if (batch.hasMore) SyncScheduler.continueSync(context)
+                        hasMore = hasMore || batch.hasMore
                     } catch (error: kotlinx.coroutines.CancellationException) { throw error }
                     catch (error: Exception) { success = false; repository.log("imap", error.javaClass.simpleName) }
                 }
             }
+            if (hasMore && success) SyncScheduler.continueSync(context)
             if (success) repository.update { it.copy(lastSyncMillis = System.currentTimeMillis()) }
             RequestSurfaces.updateWidgets(context)
             success

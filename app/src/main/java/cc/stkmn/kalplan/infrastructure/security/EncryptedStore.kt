@@ -30,9 +30,15 @@ class EncryptedStore(context: Context) {
         if (!file.baseFile.exists() && !File(file.baseFile.path + ".bak").exists()) return null
         val bytes = file.openRead().use { stream ->
             val limit = 32 * 1024 * 1024
-            val result = stream.readBytes()
-            require(result.size <= limit) { "Encrypted store exceeds limit" }
-            result
+            val output = java.io.ByteArrayOutputStream()
+            val buffer = ByteArray(4096)
+            while (true) {
+                val count = stream.read(buffer)
+                if (count < 0) break
+                require(output.size() + count <= limit) { "Encrypted store exceeds limit" }
+                output.write(buffer, 0, count)
+            }
+            output.toByteArray()
         }
         require(bytes.size >= 29 && bytes[0] == 1.toByte()) { "Unsupported encrypted store" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
@@ -41,6 +47,7 @@ class EncryptedStore(context: Context) {
         return cipher.doFinal(bytes.copyOfRange(13, bytes.size)).toString(Charsets.UTF_8)
     }
     @Synchronized fun write(name: String, value: String) {
+        require(value.toByteArray(Charsets.UTF_8).size <= 31 * 1024 * 1024) { "Local storage limit reached" }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, key)
         cipher.updateAAD(name.toByteArray(Charsets.UTF_8))
