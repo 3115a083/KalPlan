@@ -81,7 +81,7 @@ jobs:
         env:
           REQUESTED_API: ${{ matrix.api }}
         run: |
-          sdkmanager --list > "$RUNNER_TEMP/sdk-packages.txt"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --list > "$RUNNER_TEMP/sdk-packages.txt"
           python3 tools/resolve_emulator.py "$RUNNER_TEMP/sdk-packages.txt" "$REQUESTED_API" "$GITHUB_OUTPUT"
       - uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d
         with:
