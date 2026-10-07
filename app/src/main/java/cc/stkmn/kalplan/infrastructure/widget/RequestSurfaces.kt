@@ -88,12 +88,14 @@ class RequestWidgetService : RemoteViewsService() {
     override fun onGetViewFactory(intent: Intent): RemoteViewsFactory = Factory(applicationContext, intent.getBooleanExtra("small", false))
     private class Factory(private val context: Context, private val small: Boolean) : RemoteViewsFactory {
         private var requests = emptyList<StoredRequest>()
+        private var assessments = emptyMap<String, String>()
         override fun onCreate() = Unit
         override fun onDataSetChanged() {
             val repository = AppRepository.get(context)
             runCatching { runBlocking { repository.load() } }
             val state = repository.data.value
             requests = state.requests.filter { it.pending }.sortedByDescending { PlanningPolicy.priority(it, state.settings).score }.let { if (small) it.take(2) else it }
+            assessments = runBlocking { requests.take(50).associate { r -> r.id to runCatching { cc.stkmn.kalplan.application.Planner(context, repository).assess(r).status }.getOrDefault("UNCLEAR") } }
         }
         override fun onDestroy() = Unit
         override fun getCount() = requests.size
@@ -102,7 +104,12 @@ class RequestWidgetService : RemoteViewsService() {
             val german = Locale.getDefault().language == "de"
             return RemoteViews(context.packageName, R.layout.widget_request_row).apply {
                 setTextViewText(R.id.widget_row_title, RequestSurfaces.time(r) + " · P${PlanningPolicy.priority(r, AppRepository.get(context).data.value.settings).rank}")
-                setTextViewText(R.id.widget_row_detail, r.subject.take(80) + "\n" + r.labels.joinToString(" · ") + if (r.unclear) " · ?" else "")
+                setTextViewText(R.id.widget_row_detail, r.subject.take(80) + "\n" + r.labels.joinToString(" · ") + " · " + when (assessments[r.id]) {
+                    "FEASIBLE" -> if (german) "Machbar" else "Feasible"
+                    "POSSIBLE" -> if (german) "Möglicherweise" else "Possibly feasible"
+                    "CONFLICT" -> if (german) "Konflikt" else "Conflict"
+                    else -> if (german) "Unklar" else "Unclear"
+                })
                 setOnClickFillInIntent(R.id.widget_row, RequestSurfaces.intent(context, r.id))
                 setTextViewText(R.id.widget_accept, if (german) "Annehmen" else "Accept")
                 setTextViewText(R.id.widget_decline, if (german) "Ablehnen" else "Decline")

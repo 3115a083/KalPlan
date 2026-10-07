@@ -32,7 +32,7 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         val account = repository.data.value.accounts.first { it.id == request.accountId && it.enabled }
         val providers = AccountProviders(repository)
         // Reload source to defend against stale UIDVALIDITY and changed Reply-To/header provenance.
-        val source = AngusMailReader(providers, providers).loadMessage(MailFolderRef(account.id, request.folder), request.id)
+        val source = AngusMailReader(providers, providers).loadMessage(MailFolderRef(account.id, request.folder), request.sourceStableId ?: request.id)
         require(source.envelope.messageId == request.messageId && source.envelope.sender == request.sender)
         if (!settings.debug) require(ReplyPolicy.address(source.envelope.replyTo ?: source.envelope.sender) == recipient)
         val credential = if (account.authMode == "XOAUTH2") cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.accessToken(context, repository, account.id) else repository.secret(account.id, true)

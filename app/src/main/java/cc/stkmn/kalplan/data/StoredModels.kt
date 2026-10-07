@@ -45,7 +45,9 @@ data class LabelPolicy(
     val durationMinutes: Int? = null,
     val durationPriority: Int = 0,
     val shortThresholdMinutes: Int? = null,
-    val shortScore: Int = 0
+    val shortScore: Int = 0,
+    val requiredLabels: Set<String> = emptySet(),
+    val excludedLabels: Set<String> = emptySet()
 )
 
 @Serializable
@@ -119,6 +121,7 @@ data class StoredRequest(
     val accountId: String = "",
     val folder: String = "",
     val messageId: String? = null,
+    val sourceStableId: String? = null,
     val sender: String,
     val recipient: String = sender,
     val subject: String,

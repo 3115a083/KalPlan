@@ -43,7 +43,15 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                         val cursor = repository.data.value.cursors[key]
                         val batch = reader.listIncremental(MailFolderRef(account.id, folder), cursor, 100)
                         val newRequests = mutableListOf<StoredRequest>()
-                        val unseen = batch.envelopes.filterNot { e -> repository.data.value.requests.any { it.id == e.stableId } }
+                        val existing = repository.data.value.requests
+                        val remaps = mutableMapOf<String, String>()
+                        val unseen = batch.envelopes.filterNot { e ->
+                            val match = existing.firstOrNull { old -> old.id == e.stableId || old.sourceStableId == e.stableId }
+                                ?: existing.firstOrNull { old -> e.messageId != null && old.accountId == account.id && old.folder == folder &&
+                                    old.messageId == e.messageId && old.sender == e.sender && old.subject == e.subject && old.receivedMillis == e.receivedAt.toEpochMilli() }
+                            if (match != null && (match.sourceStableId ?: match.id) != e.stableId) remaps[match.id] = e.stableId
+                            match != null
+                        }
                         val messages = if (unseen.isEmpty()) emptyList() else reader.loadBatch(MailFolderRef(account.id, folder), unseen)
                         for (item in messages) {
                             val envelope = item.envelope
@@ -65,7 +73,7 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
                         }
                         // One durable write per folder batch, including cursor. No per-message full-store rewrites.
                         repository.update { current -> current.copy(
-                            requests = current.requests + newRequests.filterNot { r -> current.requests.any { it.id == r.id } },
+                            requests = current.requests.map { old -> remaps[old.id]?.let { old.copy(sourceStableId = it) } ?: old } + newRequests.filterNot { r -> current.requests.any { it.id == r.id } },
                             cursors = current.cursors + (key to batch.cursor)) }
                         val newIds = newRequests.map { it.id }
                         for (id in newIds) RequestSurfaces.notify(context, id)

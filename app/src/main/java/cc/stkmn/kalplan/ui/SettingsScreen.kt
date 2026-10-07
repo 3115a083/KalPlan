@@ -51,6 +51,7 @@ import java.util.UUID
 @Composable
 fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit) {
     val context = LocalContext.current
+    var noticesOpen by remember { mutableStateOf(false) }
     var accountEdit by remember { mutableStateOf<MailAccount?>(null) }
     var newAccount by remember { mutableStateOf(false) }
     var profileJson by rememberSaveable { mutableStateOf<String?>(null) }
@@ -128,7 +129,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             } }
         }
         OutlinedButton(onClick = { writePermission.launch(Manifest.permission.WRITE_CALENDAR) }) { Text(tr("Schreibrecht für Reservierungen erlauben", "Allow reservation writing")) }
-        OutlinedButton(enabled = !busy, onClick = { onRun {
+        OutlinedButton(enabled = !busy && !state.settings.debug, onClick = { onRun {
             val id = AndroidReservationWriter(context).createLocalCalendar()
             repository.update { it.copy(settings = it.settings.copy(reservationCalendarId = id), calendars = it.calendars + CalendarPrivacy(id, included = true, showTitle = true)) }
             calendarList = AndroidCalendarReader(context).calendars()
@@ -205,6 +206,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             taps = if (now - lastTap < 1200) taps + 1 else 1; lastTap = now
             if (taps >= 5) { debugOpen = true; taps = 0 }
         })
+        TextButton(onClick = { noticesOpen = true }) { Text(tr("Open-Source-Lizenzen", "Open-source licenses")) }
         Text("Version ${BuildConfig.VERSION_NAME}" + if (BuildConfig.DEBUG) " (Debug APK)" else "")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/3115a083/KalPlan"))) }) { Text("GitHub") }
@@ -229,6 +231,12 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             SelectionContainer { Text(state.diagnostics.takeLast(20).joinToString("\n"), style = MaterialTheme.typography.bodySmall) }
         }
         Spacer(Modifier.height(40.dp))
+    }
+    if (noticesOpen) {
+        val notice = remember { context.assets.list("licenses").orEmpty().sorted().joinToString("\n\n") { name -> name + "\n" + context.assets.open("licenses/$name").bufferedReader().use { it.readText() } } }
+        AlertDialog(onDismissRequest = { noticesOpen = false }, title = { Text(tr("Open-Source-Lizenzen", "Open-source licenses")) },
+            text = { SelectionContainer { Text(notice, Modifier.verticalScroll(rememberScrollState())) } },
+            confirmButton = { TextButton(onClick = { noticesOpen = false }) { Text(tr("Schließen", "Close")) } })
     }
     if (newAccount || accountEdit != null) AccountDialog(accountEdit, state, repository, busy, onRun,
         onDismiss = { newAccount = false; accountEdit = null })

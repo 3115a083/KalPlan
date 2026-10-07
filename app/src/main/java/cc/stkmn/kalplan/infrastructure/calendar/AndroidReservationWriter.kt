@@ -10,6 +10,7 @@ import java.time.ZoneId
 
 class AndroidReservationWriter(private val context: Context) : ReservationWriter {
     override suspend fun createReservation(draft: ReservationDraft): String = withContext(Dispatchers.IO) {
+        require(!cc.stkmn.kalplan.data.AppRepository.get(context).data.value.settings.debug) { "Calendar writes disabled in debug mode" }
         require(draft.end.isAfter(draft.start))
         val calendar = draft.calendarId.toLongOrNull() ?: error("Invalid reservation calendar")
         context.contentResolver.query(CalendarContract.Calendars.CONTENT_URI,
@@ -30,6 +31,7 @@ class AndroidReservationWriter(private val context: Context) : ReservationWriter
         context.contentResolver.insert(CalendarContract.Events.CONTENT_URI, values)?.lastPathSegment ?: error("Reservation write failed")
     }
     suspend fun createLocalCalendar(): String = withContext(Dispatchers.IO) {
+        require(!cc.stkmn.kalplan.data.AppRepository.get(context).data.value.settings.debug) { "Calendar writes disabled in debug mode" }
         val uri = CalendarContract.Calendars.CONTENT_URI.buildUpon()
             .appendQueryParameter(CalendarContract.CALLER_IS_SYNCADAPTER, "true")
             .appendQueryParameter(CalendarContract.Calendars.ACCOUNT_NAME, "KalPlan")

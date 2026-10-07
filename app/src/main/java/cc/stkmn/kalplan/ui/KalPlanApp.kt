@@ -186,7 +186,7 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
                 if (request.labels.isNotEmpty()) Text(request.labels.joinToString(" · "), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(if (request.candidate?.mode == "ONLINE") tr("Online", "Online") else request.candidate?.location.orEmpty().ifBlank { request.sender }, maxLines = 1, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    if (settings.value.enabled && request.candidate != null) Text("≈ " + String.format(java.util.Locale.getDefault(), "%.2f €", PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, settings.value).totalCents / 100.0), fontWeight = FontWeight.SemiBold)
+                    if (settings.value.enabled && request.candidate != null) Text("≈ " + String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f €", PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, settings.value).totalCents / 100.0), fontWeight = FontWeight.SemiBold)
                 }
                 if (priority.stale) Text(tr("Veraltet. Weiterhin bearbeitbar.", "Stale. Still available for review."), style = MaterialTheme.typography.labelSmall)
                 if (request.demo) Text(tr("Beispiel, Versand gesperrt", "Sample, sending disabled"), style = MaterialTheme.typography.labelSmall)

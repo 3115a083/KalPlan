@@ -77,7 +77,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                     if (state.settings.value.enabled && request.candidate != null) {
                         val value = PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, state.settings.value)
                         Text(tr("Auftragswert, Schätzung", "Estimated order value"), style = MaterialTheme.typography.titleMedium)
-                        Text(String.format(java.util.Locale.getDefault(), "≈ %.2f €", value.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium)
+                        Text(String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "≈ %.2f €", value.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium)
                         Text(tr("Arbeitszeit", "Work") + ": ${value.billedMinutes} min · ${value.workCents / 100.0} €\n" + tr("Fahrtzeit", "Travel") + ": ${value.travelCents / 100.0} €\n" + tr("Kilometer", "Distance") + ": ${value.distanceCents / 100.0} €\n" + tr("Pauschalen", "Flat fees") + ": ${value.flatCents / 100.0} €")
                     }
                     if (request.pending) {
@@ -123,7 +123,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             val extension = when(file.mime.lowercase()) { "application/pdf" -> ".pdf"; "image/png" -> ".png"; "image/jpeg" -> ".jpg"; "text/plain" -> ".txt"; else -> ".bin" }
             val target = java.io.File(directory, UUID.randomUUID().toString() + extension)
             val providers = cc.stkmn.kalplan.infrastructure.mail.AccountProviders(repository)
-            cc.stkmn.kalplan.infrastructure.mail.AngusMailReader(providers, providers).downloadAttachment(cc.stkmn.kalplan.domain.port.MailFolderRef(request.accountId, request.folder), request.id, file.partPath, target)
+            cc.stkmn.kalplan.infrastructure.mail.AngusMailReader(providers, providers).downloadAttachment(cc.stkmn.kalplan.domain.port.MailFolderRef(request.accountId, request.folder), request.sourceStableId ?: request.id, file.partPath, target)
             val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".files", target)
             context.startActivity(Intent.createChooser(Intent(Intent.ACTION_VIEW).setDataAndType(uri, file.mime)
                 .apply { clipData = android.content.ClipData.newRawUri("attachment", uri) }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), file.name))

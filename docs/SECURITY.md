@@ -1,64 +1,17 @@
-# Security
+# Security, development build 0.2.0
 
-Security failures that expose secrets, contact the wrong recipient, destroy mail/calendar data or leak customer data block a release.
+See AUDIT_2026-10-07.md for implemented controls, findings and remaining validation.
 
-## Current scaffold guarantees
+- Android Keystore AES-GCM, authenticated filenames, no-backup directory and atomic writes protect stored requests, credentials, tokens and API keys.
+- Cleartext disabled. System trust, hostname checks, mandatory TLS or STARTTLS, TLS 1.2/1.3 only, network timeouts.
+- IMAP folders READ_ONLY, PEEK, never EXPUNGE or change mail flags. Bounded batches, MIME size/depth/part limits. Attachments downloaded only on explicit request to a scoped private cache.
+- AppAuth code/PKCE/browser authorization, encrypted state and serialized token refresh. Public clients only. Real provider registration and interoperability testing remain necessary.
+- Imported profiles are bounded, schema-validated and use RE2/J linear-time patterns. HTML parsed locally with jsoup; no remote resources.
+- Productive replies require review and a separate confirmation; recipient and source are reloaded and validated. Calendar checked again immediately before DATA.
+- A persisted SENDING fence prevents automatic retry after unknown SMTP delivery. Uncertain delivery is shown explicitly for manual sent-mail inspection.
+- Debug defaults to SMTP simulation; optional real test mail has a backend recipient override with no fallback. Calendar writes are disabled in the writer in debug.
+- Only selected calendars are queried. Hidden details are removed before UI display; hidden locations require separate permission for manual routing.
+- Routing is explicit, bounded and quota-accounted before the call, never automatic or retried. No telemetry.
+- CI has unit tests, Android Lint, exact-version OSV query and emulator smoke tests. These checks do not certify provider behavior or the absence of unknown vulnerabilities.
 
-- cleartext network traffic is disabled.
-- Android system trust anchors are used by default.
-- no Trust-All certificate mode exists.
-- app backup is disabled in the scaffold.
-- mail libraries are isolated behind ports.
-- V1 design treats IMAP processing as read-only.
-- no destructive mail operation is implemented.
-- no productive SMTP send path is implemented yet.
-
-## Mail
-
-Target stack: Eclipse Angus Mail.
-
-Required when implemented:
-- explicit TLS mode.
-- hostname verification.
-- bounded connection/read/write timeouts.
-- OAuth accounts use XOAUTH2 only.
-- passwords/tokens never enter logs.
-- source folders are opened read-only in V1.
-- duplicate-send protection.
-
-## OAuth
-
-Do not implement OAuth protocol flows manually.
-
-Use maintained provider/native libraries where possible. Generic AppAuth remains an option only after maintenance/security review at implementation time.
-
-## Secrets
-
-Planned:
-- Android Keystore-backed encryption.
-- credentials excluded from backup.
-- redacted diagnostics.
-- API keys never exported in plain text.
-
-## Debug mode
-
-Debug mode must technically redirect outgoing mail to a configured test address. UI-only redirection is insufficient.
-
-Calendar writes are simulated by default in debug mode.
-
-## Destructive actions
-
-Future mail deletion means Move to Trash only. Never EXPUNGE as part of ordinary operation.
-
-
-## Least privilege during implementation
-
-The current scaffold requests only READ_CALENDAR. WRITE_CALENDAR will be added only when the reservation writer is implemented.
-
-IMAP reading uses:
-- Folder.READ_ONLY.
-- `mail.imap.peek=true`.
-- UID + UIDVALIDITY stable keys.
-- bounded result counts.
-- text extraction caps.
-- attachment metadata only unless a later explicit attachment action requests content.
+Production release still needs provider/device testing, backup/export strategy, large-store migration, distribution license choice and release signing.

@@ -1,147 +1,27 @@
-# KalPlan
+# KalPlan 0.2.0-dev
 
-KalPlan is an Android app for safely processing appointment and job requests from email folders.
+Android app for reviewing appointment requests, checking device calendars and planning replies. This branch turns the original scaffold into a functional development build using the Dispatcher design and icon 1.
 
-It is designed to extract requests from IMAP mail, compare them with selected Android calendars, rank them, optionally estimate value and travel feasibility, and help the user accept or decline them without unsafe automation.
+## Use
+1. Install the debug APK (Android 8/API 26 or later).
+2. Load clearly labeled demo requests to explore list, detail, calendar and swipe views. Samples cannot send mail.
+3. Add IMAP/SMTP accounts, app passwords or registered native OAuth public-client settings; select folders and extraction profiles.
+4. Grant calendar read access and select calendars explicitly. Configure independently which private details can appear. Without calendars, productive acceptance is blocked.
+5. Configure origin, buffers, labels, reply templates and optional value estimates. Correct uncertain extraction and select a candidate before proceeding.
+6. Check both trip legs manually. Routing requires your own provider API key and explicit coordinates; it never runs automatically.
+7. Review a reply and confirm separately. Reservations are optional tentative entries after acknowledged sending, not confirmed bookings.
 
-## Status
+Notifications and a resizable scrollable Android widget open the review screen. IMAP source mail remains read-only. Attachments are downloaded only on request. Debug controls are behind five quick taps on the footer; mail defaults to simulation and calendar writes are blocked.
 
-**Early build scaffold. Do not use with production mailboxes yet.**
+## Build and validation
+Pinned Gradle wrapper, Java 17, Kotlin 2.4.10, AGP 9.4.0, target/compile API 37. CI performs unit tests, Android Lint, resolved-dependency OSV lookup, APK assembly and device smoke tests with screenshots on minimum/target APIs.
+```sh
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
 
-The repository currently contains:
-- Android 8+ project base.
-- Jetpack Compose + Material 3.
-- German and English resources.
-- Dispatcher navigation shell.
-- Material You / preset theme foundation.
-- domain models with multiple labels.
-- tested duration fallback policy.
-- tested offline rough-distance estimator.
-- protocol ports for mail/calendar/routing/AI.
-- Angus Mail session configuration with strict TLS/XOAUTH2 modes.
-- CI and dependency update configuration.
+## Security and limits
+State, credentials and OAuth tokens are encrypted using Android Keystore AES-GCM. TLS verification is mandatory. RE2/J protects profile regex execution; jsoup converts HTML locally; AppAuth implements OAuth code/PKCE.
 
-No productive SMTP send, IMAP sync or calendar write path exists yet.
+This is not a production release. Real provider testing, license selection, signing and large-store/export migration remain necessary. Advanced optional features and all known limitations are recorded in [the audit](docs/AUDIT_2026-10-07.md). See [security](docs/SECURITY.md), [dependency policy](docs/DEPENDENCIES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
-## Core safety model
-
-- no autonomous mail replies.
-- Accept/Decline always require explicit user interaction.
-- productive sending will require a second confirmation.
-- calendar is rechecked immediately before sending.
-- a sent acceptance can create only an optional reservation, not a booked job.
-- V1 mail processing is server-side read-only.
-- no permanent mail deletion.
-- routing is manual only.
-- cloud AI is opt-in only.
-
-## Offline rough travel estimate
-
-KalPlan can estimate rough proximity without contacting a routing provider.
-
-A local postcode/city index resolves approximate centroids. KalPlan then calculates straight-line distance and a conservative travel-time range.
-
-Example intent:
-- Dortmund to Bochum is recognized as much closer than Dortmund to Euskirchen.
-- no API quota is consumed.
-- no customer location is sent to a third party.
-
-The result is explicitly shown as an offline estimate, not a route.
-
-See [docs/OFFLINE_PROXIMITY.md](docs/OFFLINE_PROXIMITY.md).
-
-## Protocol libraries
-
-KalPlan avoids custom protocol implementations.
-
-Current base:
-- IMAP/SMTP/MIME: Eclipse Angus Mail.
-- background work: AndroidX WorkManager.
-- Android calendar: CalendarContract adapter planned.
-
-Later:
-- OAuth via maintained provider/native libraries.
-- CalDAV via dav4jvm / DAVx5 ecosystem libraries where suitable.
-
-See [docs/DEPENDENCIES.md](docs/DEPENDENCIES.md).
-
-## Duration fallback
-
-When duration cannot be extracted:
-
-1. profile override.
-2. highest-priority label override.
-3. global default of 60 minutes.
-
-If equal-priority labels specify different durations, the longer duration wins conservatively.
-
-## UI
-
-Design direction: **Dispatcher + Timeline**.
-
-- compact request list.
-- multiple labels per request.
-- timeline in request detail/calendar context.
-- Swipe is an alternate triage view.
-- no prominent Today section.
-- Material You or editable KalPlan presets.
-- reservations use a light, low-saturation ghost appearance.
-
-## Build
-
-Requirements:
-- JDK 17.
-- Gradle Wrapper 9.6.
-- Android SDK 37.
-
-Commands:
-
-~~~bash
-./gradlew :app:testDebugUnitTest
-./gradlew :app:assembleDebug
-~~~
-
-CI uses the same Gradle version.
-
-## Project structure
-
-~~~text
-app/src/main/java/cc/stkmn/kalplan/
-  core/
-  domain/
-    model/
-    policy/
-    port/
-    proximity/
-  infrastructure/
-    mail/
-  ui/
-docs/
-~~~
-
-Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md) before adding network or write operations.
-
-
-## Extraction pipeline
-
-KalPlan now contains a deterministic extraction core inspired by ShareParser's profile/rule architecture.
-
-Implemented:
-- versioned data-only profiles.
-- matchers for sender, subject, body and combined content.
-- ordered extractors with capture groups and transformations.
-- guided rules created from example lines or selections.
-- Unicode/HTML-mail text normalization.
-- German and English date/time parsing.
-- relative dates and weekdays.
-- duration parsing.
-- multiple date candidates without assuming recurrence.
-- explicit alternative/multiple/unclear date relations.
-- suspicious explicit-year warnings without silent correction.
-- online/onsite/hybrid classification.
-- local street/postcode/city heuristics.
-- multiple simultaneous labels.
-- extraction confidence, evidence and review issues.
-- separate READY / USER_CHOICE_REQUIRED / UNCLEAR disposition.
-
-See [docs/EXTRACTION_PROFILES.md](docs/EXTRACTION_PROFILES.md).
+Implementation review: https://github.com/3115a083/KalPlan/pull/6

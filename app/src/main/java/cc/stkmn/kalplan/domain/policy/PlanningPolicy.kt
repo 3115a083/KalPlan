@@ -23,7 +23,7 @@ object PlanningPolicy {
         val stale = ageHours >= settings.staleHours
         val reasons = mutableListOf("base:50", "duration:+${(duration / 30).coerceAtMost(20)}")
         var score = 50 + (duration / 30).coerceAtMost(20)
-        settings.labels.filter { it.name in request.labels }.forEach { rule ->
+        settings.labels.filter { it.name in request.labels && request.labels.containsAll(it.requiredLabels) && it.excludedLabels.none { label -> label in request.labels } }.forEach { rule ->
             val delta = if (rule.shortThresholdMinutes != null && duration < rule.shortThresholdMinutes) rule.shortScore else rule.score
             score += delta; reasons += "${rule.name}:${if (delta >= 0) "+" else ""}$delta"
         }

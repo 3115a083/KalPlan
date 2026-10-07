@@ -250,11 +250,11 @@ class AngusMailReader(
                 uidValidity = uidValidity,
                 uid = uid
             ).encode(),
-            messageId = getHeader("Message-ID")?.firstOrNull(),
-            sender = sender,
-            subject = subject.orEmpty(),
+            messageId = getHeader("Message-ID")?.firstOrNull()?.takeIf { it.length <= 998 },
+            sender = sender.take(512),
+            subject = subject.orEmpty().take(2000),
             receivedAt = received.toInstant(),
-            replyTo = replyTo?.firstOrNull()?.let { (it as? InternetAddress)?.address }
+            replyTo = replyTo?.firstOrNull()?.let { (it as? InternetAddress)?.address?.take(512) }
         )
     }
 }

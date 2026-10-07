@@ -48,7 +48,7 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { dayText = day.minusDays(7).toString() }) { Text("‹") }
-                Text(day.format(DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.getDefault())), style = MaterialTheme.typography.titleLarge)
+                Text(day.format(DateTimeFormatter.ofPattern("MMMM yyyy", androidx.compose.ui.platform.LocalConfiguration.current.locales[0])), style = MaterialTheme.typography.titleLarge)
                 TextButton(onClick = { dayText = day.plusDays(7).toString() }) { Text("›") }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -56,7 +56,7 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
                 (0..6).forEach { offset ->
                     val date = monday.plusDays(offset.toLong())
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.getDefault()), style = MaterialTheme.typography.labelSmall)
+                        Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, androidx.compose.ui.platform.LocalConfiguration.current.locales[0]), style = MaterialTheme.typography.labelSmall)
                         FilterChip(selected = day == date, onClick = { dayText = date.toString() }, label = { Text(date.dayOfMonth.toString()) })
                     }
                 }
