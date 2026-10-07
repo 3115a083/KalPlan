@@ -11,6 +11,7 @@ import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.NavigationBar
@@ -37,6 +38,7 @@ private enum class MainSection(
     SETTINGS(R.string.nav_settings)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KalPlanApp() {
     var section by rememberSaveable { mutableStateOf(MainSection.REQUESTS) }
