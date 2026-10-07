@@ -114,6 +114,8 @@ class FlexibleTemporalParser {
         }
 
         val times = parseTimes(sanitizedTimeText, rules)
+        val parsedStartTime = times.first
+        val parsedEndTime = times.second
         val duration = parseDurationMinutes(durationText)
         if (durationText.isNotBlank() && duration == null) {
             issues += ExtractionIssue(
@@ -132,7 +134,7 @@ class FlexibleTemporalParser {
             return TemporalParseResult(emptyList(), duration, issues)
         }
 
-        if (times.first == null) {
+        if (parsedStartTime == null) {
             issues += ExtractionIssue(
                 code = "time_missing",
                 message = "No start time could be extracted.",
@@ -160,13 +162,13 @@ class FlexibleTemporalParser {
                 }
             }
 
-            val start = times.first?.let { LocalDateTime.of(token.date, it).atZone(reference.zone) }
+            val start = parsedStartTime?.let { LocalDateTime.of(token.date, it).atZone(reference.zone) }
             val end = when {
                 start == null -> null
-                times.second != null -> {
+                parsedEndTime != null && parsedStartTime != null -> {
                     var endDate = token.date
-                    if (times.second.isBefore(times.first)) endDate = endDate.plusDays(1)
-                    LocalDateTime.of(endDate, times.second).atZone(reference.zone)
+                    if (parsedEndTime.isBefore(parsedStartTime)) endDate = endDate.plusDays(1)
+                    LocalDateTime.of(endDate, parsedEndTime).atZone(reference.zone)
                 }
                 duration != null -> start.plusMinutes(duration.toLong())
                 else -> null
@@ -174,8 +176,8 @@ class FlexibleTemporalParser {
 
             ParsedTemporalCandidate(
                 date = token.date,
-                startTime = times.first,
-                endTime = times.second ?: end?.toLocalTime(),
+                startTime = parsedStartTime,
+                endTime = parsedEndTime ?: end?.toLocalTime(),
                 start = start,
                 end = end,
                 relation = relation,
