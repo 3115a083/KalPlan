@@ -109,11 +109,20 @@ class FlexibleTemporalParser {
             )
         }
 
-        val sanitizedTimeText = if (timeText === dateText || timeText == dateText) {
-            removeRanges(timeText, dates.map { it.range })
+        val dateTokensInsideTimeText = if (timeText === dateText || timeText == dateText) {
+            dates
         } else {
-            timeText
+            findDates(
+                text = timeText,
+                referenceDate = reference.toLocalDate(),
+                rules = rules,
+                issues = mutableListOf()
+            )
         }
+        val sanitizedTimeText = removeRanges(
+            text = timeText,
+            ranges = dateTokensInsideTimeText.map { it.range }
+        )
 
         val times = parseTimes(sanitizedTimeText, rules)
         val parsedStartTime = times.first
