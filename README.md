@@ -91,14 +91,14 @@ Design direction: **Dispatcher + Timeline**.
 
 Requirements:
 - JDK 17.
-- Gradle 9.6.
+- Gradle Wrapper 9.6.
 - Android SDK 37.
 
 Commands:
 
 ~~~bash
-gradle :app:testDebugUnitTest
-gradle :app:assembleDebug
+./gradlew :app:testDebugUnitTest
+./gradlew :app:assembleDebug
 ~~~
 
 CI uses the same Gradle version.
