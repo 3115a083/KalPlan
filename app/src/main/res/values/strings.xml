@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KalPlan</string>
+    <string name="nav_requests">Requests</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_unclear">Unclear</string>
+    <string name="nav_settings">Settings</string>
+    <string name="requests_title">Requests</string>
+    <string name="requests_empty">No unprocessed requests yet.</string>
+    <string name="calendar_title">Calendar</string>
+    <string name="calendar_placeholder">Android calendar integration will be added behind the CalendarGateway.</string>
+    <string name="unclear_title">Unclear requests</string>
+    <string name="unclear_placeholder">Requests with missing or contradictory fields will appear here.</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_sync">Default sync: 15 minutes</string>
+    <string name="settings_duration">Fallback duration: 60 minutes</string>
+    <string name="settings_origin">Previous-event origin window: 120 minutes</string>
+    <string name="settings_offline_distance">Offline postcode/city proximity: planned</string>
+</resources>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">KalPlan</string>
+    <string name="nav_requests">Anfragen</string>
+    <string name="nav_calendar">Kalender</string>
+    <string name="nav_unclear">Unklar</string>
+    <string name="nav_settings">Einstellungen</string>
+    <string name="requests_title">Anfragen</string>
+    <string name="requests_empty">Noch keine unbearbeiteten Anfragen.</string>
+    <string name="calendar_title">Kalender</string>
+    <string name="calendar_placeholder">Die Android-Kalenderintegration wird hinter dem CalendarGateway ergänzt.</string>
+    <string name="unclear_title">Unklare Anfragen</string>
+    <string name="unclear_placeholder">Anfragen mit fehlenden oder widersprüchlichen Angaben erscheinen hier.</string>
+    <string name="settings_title">Einstellungen</string>
+    <string name="settings_sync">Standard-Sync: 15 Minuten</string>
+    <string name="settings_duration">Fallback-Dauer: 60 Minuten</string>
+    <string name="settings_origin">Vorheriger Termin als Startort: 120 Minuten</string>
+    <string name="settings_offline_distance">Offline-PLZ-/Ortsnähe: vorgesehen</string>
+</resources>
