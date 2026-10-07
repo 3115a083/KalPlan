@@ -120,3 +120,28 @@ docs/
 ~~~
 
 Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [docs/SECURITY.md](docs/SECURITY.md) before adding network or write operations.
+
+
+## Extraction pipeline
+
+KalPlan now contains a deterministic extraction core inspired by ShareParser's profile/rule architecture.
+
+Implemented:
+- versioned data-only profiles.
+- matchers for sender, subject, body and combined content.
+- ordered extractors with capture groups and transformations.
+- guided rules created from example lines or selections.
+- Unicode/HTML-mail text normalization.
+- German and English date/time parsing.
+- relative dates and weekdays.
+- duration parsing.
+- multiple date candidates without assuming recurrence.
+- explicit alternative/multiple/unclear date relations.
+- suspicious explicit-year warnings without silent correction.
+- online/onsite/hybrid classification.
+- local street/postcode/city heuristics.
+- multiple simultaneous labels.
+- extraction confidence, evidence and review issues.
+- separate READY / USER_CHOICE_REQUIRED / UNCLEAR disposition.
+
+See [docs/EXTRACTION_PROFILES.md](docs/EXTRACTION_PROFILES.md).
