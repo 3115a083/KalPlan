@@ -46,7 +46,7 @@ class KalPlanExtractionPipeline(
             timeField != null ->
                 timeField.value
             else ->
-                dateText
+                normalizedInput.combined
         }
 
         val temporal = temporalParser.parse(
