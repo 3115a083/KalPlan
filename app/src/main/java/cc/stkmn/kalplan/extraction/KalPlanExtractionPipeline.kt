@@ -30,7 +30,7 @@ class KalPlanExtractionPipeline(
         val issues = profileResult.issues.toMutableList()
         val labels = labelRuleEngine.labels(normalizedInput, labelRules)
 
-        val dateField = firstSemantic(fields, SemanticField.DATE)
+        val dateFields = semanticValues(fields, SemanticField.DATE)
         val timeField = firstSemantic(fields, SemanticField.TIME)
         val endTimeField = firstSemantic(fields, SemanticField.END_TIME)
         val durationField = firstSemantic(fields, SemanticField.DURATION)
@@ -39,7 +39,10 @@ class KalPlanExtractionPipeline(
             ?: firstSemantic(fields, SemanticField.ONLINE_OR_LOCATION)
         val combinedOnlineLocation = firstSemantic(fields, SemanticField.ONLINE_OR_LOCATION)
 
-        val dateText = dateField?.value ?: normalizedInput.combined
+        val dateText = structuredDateText(
+            dateFields = dateFields,
+            mode = profile?.multipleDateMode ?: MultipleDateMode.AUTO
+        ) ?: normalizedInput.combined
         val timeText = when {
             timeField != null && endTimeField != null ->
                 timeField.value + " - " + endTimeField.value
@@ -97,10 +100,10 @@ class KalPlanExtractionPipeline(
         }
 
         val candidates = temporal.candidates.map { candidate ->
-            val structuredConfidence = listOfNotNull(
-                dateField?.evidence?.confidence,
-                timeField?.evidence?.confidence
-            ).minOrNull()
+            val structuredConfidence = (
+                dateFields.map { it.evidence.confidence } +
+                    listOfNotNull(timeField?.evidence?.confidence)
+                ).minOrNull()
 
             val timeConfidence = structuredConfidence ?: if (profile == null) 0.72 else 0.82
             val confidence = minOf(candidate.confidence, timeConfidence)
@@ -147,6 +150,28 @@ class KalPlanExtractionPipeline(
         fields: Map<String, ExtractedValue>,
         semantic: SemanticField
     ): ExtractedValue? = fields.values.firstOrNull { it.semantic == semantic }
+
+    private fun semanticValues(
+        fields: Map<String, ExtractedValue>,
+        semantic: SemanticField
+    ): List<ExtractedValue> = fields.values.filter { it.semantic == semantic }
+
+    private fun structuredDateText(
+        dateFields: List<ExtractedValue>,
+        mode: MultipleDateMode
+    ): String? {
+        if (dateFields.isEmpty()) return null
+        if (dateFields.size == 1) return dateFields.single().value
+
+        val separator = when (mode) {
+            MultipleDateMode.ALTERNATIVE -> " oder "
+            MultipleDateMode.MULTIPLE_OPTIONS -> " und "
+            MultipleDateMode.AUTO,
+            MultipleDateMode.UNSPECIFIED -> " ; "
+        }
+
+        return dateFields.joinToString(separator) { it.value }
+    }
 
     private fun DateRelation.toDomain(): CandidateDateRelation = when (this) {
         DateRelation.SINGLE -> CandidateDateRelation.SINGLE

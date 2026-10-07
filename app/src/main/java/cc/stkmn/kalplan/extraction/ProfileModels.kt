@@ -39,6 +39,13 @@ data class ExtractorRule(
     val sampleLabel: String? = null
 )
 
+enum class MultipleDateMode {
+    AUTO,
+    ALTERNATIVE,
+    MULTIPLE_OPTIONS,
+    UNSPECIFIED
+}
+
 data class ExtractionProfile(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     val id: String,
@@ -48,7 +55,8 @@ data class ExtractionProfile(
     val extractors: List<ExtractorRule> = emptyList(),
     val parseDirection: ParseDirection = ParseDirection.TOP_DOWN,
     val defaultDurationMinutes: Int? = null,
-    val locale: TemporalLocale = TemporalLocale.DE_DE
+    val locale: TemporalLocale = TemporalLocale.DE_DE,
+    val multipleDateMode: MultipleDateMode = MultipleDateMode.AUTO
 ) {
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1
