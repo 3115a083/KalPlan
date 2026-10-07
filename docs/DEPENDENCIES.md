@@ -56,3 +56,13 @@ Candidate for explicit custom/private CA support. Never replace certificate veri
 FairEmail and DAVx5 are valuable references for edge cases and UX/security behavior.
 
 Do not copy GPL application code into KalPlan unless the project license decision explicitly permits that.
+
+
+### kotlinx.serialization JSON 1.11.0
+
+Purpose:
+- human-readable profile import/export.
+- typed, versioned profile data.
+- no executable profile code.
+
+Decoded profiles are still validated separately before use.

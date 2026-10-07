@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "id": "structured-job-request",
+  "name": "Structured job request",
+  "enabled": true,
+  "matchers": [
+    {
+      "id": "subject-request",
+      "regex": "Anfrage|Auftrag",
+      "source": "SUBJECT",
+      "ignoreCase": true
+    }
+  ],
+  "extractors": [
+    {
+      "id": "date",
+      "key": "date",
+      "semantic": "DATE",
+      "regex": "^Datum:\\s*(.+)$",
+      "group": 1,
+      "required": true,
+      "source": "BODY",
+      "transforms": [
+        { "type": "trim" }
+      ],
+      "confidence": 0.99
+    },
+    {
+      "id": "time",
+      "key": "time",
+      "semantic": "TIME",
+      "regex": "^Zeit:\\s*(.+)$",
+      "group": 1,
+      "required": true,
+      "source": "BODY",
+      "transforms": [
+        { "type": "trim" }
+      ],
+      "confidence": 0.99
+    },
+    {
+      "id": "where",
+      "key": "where",
+      "semantic": "ONLINE_OR_LOCATION",
+      "regex": "^Ort oder Online:\\s*(.+)$",
+      "group": 1,
+      "required": false,
+      "source": "BODY",
+      "transforms": [
+        { "type": "trim" }
+      ],
+      "confidence": 0.99
+    }
+  ],
+  "parseDirection": "TOP_DOWN",
+  "locale": "DE_DE",
+  "multipleDateMode": "AUTO"
+}
