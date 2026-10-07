@@ -38,10 +38,24 @@ class ProfileExtractionEngine {
         val issues = mutableListOf<ExtractionIssue>()
 
         for (rule in profile.extractors) {
-            val source = rule.sourceVariableKey
-                ?.takeIf { it.isNotBlank() }
-                ?.let(rawValues::get)
-                ?: sourceFor(input, rule.source)
+            val variableKey = rule.sourceVariableKey?.takeIf { it.isNotBlank() }
+            val source = if (variableKey != null) {
+                rawValues[variableKey]
+            } else {
+                sourceFor(input, rule.source)
+            }
+
+            if (source == null) {
+                if (rule.required) {
+                    issues += ExtractionIssue(
+                        code = "source_variable_missing",
+                        message = "Source variable '" + variableKey + "' was not extracted.",
+                        severity = IssueSeverity.NEEDS_REVIEW,
+                        fieldKey = rule.key
+                    )
+                }
+                continue
+            }
 
             val result = try {
                 extractOne(source, rule, profile.parseDirection)
