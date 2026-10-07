@@ -1,15 +1,30 @@
 package cc.stkmn.kalplan.extraction
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
 enum class CaseMode {
     LOWER,
     UPPER
 }
 
+@Serializable
 sealed interface ValueTransform {
+    @Serializable
+    @SerialName("trim")
     data object Trim : ValueTransform
+    @Serializable
+    @SerialName("prefix")
     data class Prefix(val value: String) : ValueTransform
+    @Serializable
+    @SerialName("suffix")
     data class Suffix(val value: String) : ValueTransform
+    @Serializable
+    @SerialName("change_case")
     data class ChangeCase(val mode: CaseMode) : ValueTransform
+    @Serializable
+    @SerialName("regex_replace")
     data class RegexReplace(
         val regex: String,
         val replacement: String,
@@ -18,6 +33,7 @@ sealed interface ValueTransform {
     ) : ValueTransform
 }
 
+@Serializable
 data class MatcherRule(
     val id: String,
     val regex: String,
@@ -25,6 +41,7 @@ data class MatcherRule(
     val ignoreCase: Boolean = true
 )
 
+@Serializable
 data class ExtractorRule(
     val id: String,
     val key: String,
@@ -39,6 +56,7 @@ data class ExtractorRule(
     val sampleLabel: String? = null
 )
 
+@Serializable
 enum class MultipleDateMode {
     AUTO,
     ALTERNATIVE,
@@ -46,6 +64,7 @@ enum class MultipleDateMode {
     UNSPECIFIED
 }
 
+@Serializable
 data class ExtractionProfile(
     val schemaVersion: Int = CURRENT_SCHEMA_VERSION,
     val id: String,

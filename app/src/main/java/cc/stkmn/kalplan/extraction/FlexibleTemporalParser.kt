@@ -9,7 +9,9 @@ import java.time.temporal.ChronoUnit
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class TemporalLocale {
     DE_DE,
     EN_GB,

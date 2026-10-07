@@ -4,7 +4,9 @@ import cc.stkmn.kalplan.domain.model.AppointmentCandidate
 import cc.stkmn.kalplan.domain.model.RequestLabel
 import java.time.Instant
 import java.time.ZoneId
+import kotlinx.serialization.Serializable
 
+@Serializable
 enum class InputSource {
     COMBINED,
     BODY,
@@ -12,11 +14,13 @@ enum class InputSource {
     SENDER
 }
 
+@Serializable
 enum class ParseDirection {
     TOP_DOWN,
     BOTTOM_UP
 }
 
+@Serializable
 enum class SemanticField {
     DATE,
     TIME,
@@ -31,6 +35,7 @@ enum class SemanticField {
     CUSTOM
 }
 
+@Serializable
 enum class EvidenceKind {
     PROFILE_RULE,
     STRUCTURED_FIELD,
@@ -73,6 +78,7 @@ data class ExtractedValue(
     val evidence: ExtractionEvidence
 )
 
+@Serializable
 enum class IssueSeverity {
     INFO,
     WARNING,
