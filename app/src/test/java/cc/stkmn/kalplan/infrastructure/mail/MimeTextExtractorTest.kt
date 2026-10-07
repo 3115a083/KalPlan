@@ -7,6 +7,14 @@ import org.junit.Test
 import java.util.Properties
 
 class MimeTextExtractorTest {
+    @org.junit.Test fun oversizedWireMessageIsRejectedBeforeContentAccess() {
+        val oversized = object : jakarta.mail.internet.MimeMessage(jakarta.mail.Session.getInstance(java.util.Properties())) {
+            override fun getSize(): Int = MimeTextExtractor.MAX_WIRE_BYTES + 1
+            override fun getContent(): Any = error("Oversized content must not be accessed")
+        }
+        org.junit.Assert.assertThrows(MimeLimitException::class.java) { MimeTextExtractor().extract(oversized) }
+    }
+
     @Test(expected = IllegalArgumentException::class) fun rejectsOversizedTextBeforeFullDecode() {
         val message = MimeMessage(Session.getInstance(Properties()))
         message.setText("a".repeat(101), "UTF-8"); message.saveChanges()

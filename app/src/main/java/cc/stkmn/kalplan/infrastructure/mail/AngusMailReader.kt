@@ -147,6 +147,7 @@ class AngusMailReader(
 
                 val message = uidFolder.getMessageByUID(key.uid)
                     ?: error("Message no longer exists on server")
+                prefetch(mailFolder, arrayOf(message))
                 val envelope = message.toEnvelope(folder, uidFolder, key.uidValidity)
                 val content = mimeTextExtractor.extract(message)
 
@@ -174,6 +175,7 @@ class AngusMailReader(
                 val uids = mailFolder as? UIDFolder ?: error("UID folder required")
                 require(uids.uidValidity == key.uidValidity)
                 var part: jakarta.mail.Part = uids.getMessageByUID(key.uid) ?: error("Source message unavailable")
+                MimeTextExtractor.validateWireSize(part)
                 for (index in segments) {
                     val multipart = part.content as? jakarta.mail.Multipart ?: error("Attachment structure changed")
                     require(index < multipart.count)
@@ -192,7 +194,8 @@ class AngusMailReader(
                         }
                     }
                 }
-            } catch (error: Exception) { output.delete(); throw error }
+            } catch (_: StackOverflowError) { output.delete(); throw MimeLimitException("Provider MIME recursion limit") }
+            catch (error: Exception) { output.delete(); throw error }
             finally { if (mailFolder.isOpen) mailFolder.close(false) }
         }
 
@@ -218,12 +221,17 @@ class AngusMailReader(
 
     private fun prefetch(folder: Folder, messages: Array<Message>) {
         if (messages.isEmpty()) return
-        val profile = FetchProfile().apply {
-            add(FetchProfile.Item.ENVELOPE)
-            add(FetchProfile.Item.CONTENT_INFO)
+        val sizes = FetchProfile().apply {
+            add(FetchProfile.Item.SIZE)
             add(UIDFolder.FetchProfileItem.UID)
         }
-        folder.fetch(messages, profile)
+        folder.fetch(messages, sizes)
+        val safe = messages.filter { it.size in 0..MimeTextExtractor.MAX_WIRE_BYTES }.toTypedArray()
+        if (safe.isNotEmpty()) folder.fetch(safe, FetchProfile().apply {
+            add(FetchProfile.Item.ENVELOPE)
+            add("Message-ID")
+        })
+        // Do not eagerly fetch BODYSTRUCTURE. Bound each message before the provider parser runs.
     }
 
     private fun Message.toEnvelope(
@@ -233,6 +241,10 @@ class AngusMailReader(
     ): MailEnvelope {
         val uid = uidFolder.getUID(this)
         require(uid > 0) { "Server returned invalid message UID" }
+
+        if (size !in 0..MimeTextExtractor.MAX_WIRE_BYTES) return MailEnvelope(
+            StableImapKey(folder.accountId, folder.path, uidValidity, uid).encode(), null, "",
+            "Mail exceeds safe import size", Instant.EPOCH)
 
         val sender = from
             ?.firstOrNull()

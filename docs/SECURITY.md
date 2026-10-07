@@ -15,3 +15,5 @@ See AUDIT_2026-10-07.md for implemented controls, findings and remaining validat
 - CI has unit tests, Android Lint, exact-version OSV query and emulator smoke tests. These checks do not certify provider behavior or the absence of unknown vulnerabilities.
 
 Production release still needs provider/device testing, backup/export strategy, large-store migration, distribution license choice and release signing.
+
+Live messages above 16 MiB (or with an unavailable size) are rejected before ENVELOPE/BODYSTRUCTURE processing. Oversized source mail stays in the mail account and appears as an unclear placeholder. Provider parser recursion overflow is normalized to an unsafe-MIME result. Traversal limits supplement the trusted protocol library; they do not constitute a complete hostile-server parser sandbox. No attachment bodies are prefetched for normal extraction.

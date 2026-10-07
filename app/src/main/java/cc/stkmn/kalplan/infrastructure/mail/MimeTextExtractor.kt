@@ -9,15 +9,26 @@ import java.nio.charset.Charset
 
 internal data class ExtractedMimeContent(val plainText: String?, val htmlText: String?, val attachments: List<MailAttachmentMeta>)
 
-/** Bound decoded reads, MIME traversal and recursion before allocation. No remote HTML rendering. */
+/** Bound decoded reads and traversal. Reject oversized live messages before provider MIME parsing. */
 internal class MimeLimitException(message: String) : IllegalArgumentException(message)
 
 internal class MimeTextExtractor(private val maxTextChars: Int = 512_000, private val maxParts: Int = 200, private val maxDepth: Int = 16) {
     init { require(maxTextChars in 1..2_000_000); require(maxParts in 1..1000); require(maxDepth in 1..32) }
     fun extract(part: Part): ExtractedMimeContent {
+        validateWireSize(part)
         val state = State()
-        visit(part, state, 0, "")
+        try { visit(part, state, 0, "") } catch (_: StackOverflowError) { throw MimeLimitException("Provider MIME recursion limit") }
         return ExtractedMimeContent(state.plain.toString().takeIf { it.isNotBlank() }, state.html.toString().takeIf { it.isNotBlank() }, state.attachments)
+    }
+    companion object {
+        const val MAX_WIRE_BYTES = 16 * 1024 * 1024
+        fun validateWireSize(part: Part) {
+            if (part is jakarta.mail.Message) {
+                val size = part.size
+                if (size > MAX_WIRE_BYTES || part is org.eclipse.angus.mail.imap.IMAPMessage && size < 0)
+                    throw MimeLimitException("MIME wire size limit")
+            }
+        }
     }
     private fun visit(part: Part, state: State, depth: Int, path: String) {
         if (depth > maxDepth || ++state.parts > maxParts) throw MimeLimitException("MIME complexity limit")
