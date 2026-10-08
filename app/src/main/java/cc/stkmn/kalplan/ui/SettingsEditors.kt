@@ -84,10 +84,10 @@ fun ValueEditorDialog(existing: ValueSettings, onDismiss: () -> Unit, onSave: (V
     val valid = listOf(work, travel, km, flat).all { eurosToCents(it) != null } && step.toIntOrNull()?.let { it in 1..1440 } == true
     AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Globaler Auftragswert", "Global order value")) }, text = {
         Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work) { work = it }
-            MoneyField(tr("Fahrtzeit pro Stunde", "Travel per hour"), travel) { travel = it }
-            MoneyField(tr("Kilometerpauschale", "Per kilometer"), km) { km = it }
-            MoneyField(tr("Feste Pauschale", "Flat fee"), flat) { flat = it }
+            MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work, onValue = { work = it })
+            MoneyField(tr("Fahrtzeit pro Stunde", "Travel per hour"), travel, onValue = { travel = it })
+            MoneyField(tr("Kilometerpauschale", "Per kilometer"), km, onValue = { km = it })
+            MoneyField(tr("Feste Pauschale", "Flat fee"), flat, onValue = { flat = it })
             OutlinedTextField(step, { step = it.filter(Char::isDigit).take(4) }, label = { Text(tr("Abrechnungsschritt, Minuten", "Billing increment, minutes")) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
             ToggleRow(tr("Aufrunden", "Round up"), roundUp) { roundUp = it }
             ToggleRow(tr("Hin- und Rückfahrt berechnen", "Calculate round trip"), roundTrip) { roundTrip = it }
