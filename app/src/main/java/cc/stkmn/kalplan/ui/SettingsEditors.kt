@@ -81,7 +81,7 @@ fun ValueEditorDialog(existing: ValueSettings, onDismiss: () -> Unit, onSave: (V
     var step by rememberSaveable { mutableStateOf(existing.billingStepMinutes.toString()) }
     var roundUp by rememberSaveable { mutableStateOf(existing.roundUp) }
     var roundTrip by rememberSaveable { mutableStateOf(existing.roundTrip) }
-    val valid = listOf(work, travel, km, flat).all { eurosToCents(it) != null } && step.toIntOrNull() in 1..1440
+    val valid = listOf(work, travel, km, flat).all { eurosToCents(it) != null } && step.toIntOrNull()?.let { it in 1..1440 } == true
     AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Globaler Auftragswert", "Global order value")) }, text = {
         Column(Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work) { work = it }
@@ -117,7 +117,7 @@ fun LabelEditorDialog(existing: LabelPolicy?, global: ValueSettings, onDismiss: 
     var km by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.centsPerKm)) }
     var flat by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.flatCents)) }
     val validMoney = listOf(work, travel, km, flat).all { it.isBlank() || eurosToCents(it) != null }
-    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (terms.isNotEmpty() || sender.isNotBlank()) && (!durationEnabled || duration.toIntOrNull() in 1..10080) && validMoney
+    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (terms.isNotEmpty() || sender.isNotBlank()) && (!durationEnabled || duration.toIntOrNull()?.let { it in 1..10080 } == true) && validMoney
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) tr("Label erstellen", "Create label") else tr("Label bearbeiten", "Edit label")) }, text = {
         Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(name, { name = it.take(80) }, label = { Text(tr("Name", "Name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -195,7 +195,7 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
     var semantic by rememberSaveable { mutableStateOf("DATE") }
     var source by rememberSaveable { mutableStateOf("BODY") }
     var required by rememberSaveable { mutableStateOf(false) }
-    val valid = name.isNotBlank() && rules.isNotEmpty() && (duration.isBlank() || duration.toIntOrNull() in 1..10080)
+    val valid = name.isNotBlank() && rules.isNotEmpty() && (duration.isBlank() || duration.toIntOrNull()?.let { it in 1..10080 } == true)
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) tr("Profil erstellen", "Create profile") else tr("Profil bearbeiten", "Edit profile")) }, text = {
         Column(Modifier.heightIn(max = 640.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(name, { name = it.take(100) }, label = { Text(tr("Profilname", "Profile name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
