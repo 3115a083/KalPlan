@@ -214,7 +214,7 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
             }
             Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(tr("Feld ohne Regex hinzufügen", "Add field without regex"), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                    Text(tr("Feld hinzufügen", "Add field"), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     Text(tr("Trage die sichtbare Bezeichnung vor dem Wert ein, zum Beispiel „Termin“ oder „Ort“.", "Enter the visible label before the value, for example “Date” or “Location”."), style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(prefix, { prefix = it.take(100) }, label = { Text(tr("Bezeichnung in der Mail", "Label in the email")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic) { semantic = it }
