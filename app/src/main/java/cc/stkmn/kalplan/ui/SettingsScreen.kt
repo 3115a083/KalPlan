@@ -49,7 +49,7 @@ import java.util.UUID
 @Composable private fun SectionTitle(text: String) { Text(text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp)) }
 
 @Composable
-fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit) {
+fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit) {
     val context = LocalContext.current
     var noticesOpen by remember { mutableStateOf(false) }
     var accountEdit by remember { mutableStateOf<MailAccount?>(null) }
@@ -263,7 +263,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
 }
 
 @Composable
-private fun AccountDialog(existing: MailAccount?, state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
+internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val id = remember { existing?.id ?: UUID.randomUUID().toString() }
     var authMode by rememberSaveable { mutableStateOf(existing?.authMode ?: "PASSWORD") }

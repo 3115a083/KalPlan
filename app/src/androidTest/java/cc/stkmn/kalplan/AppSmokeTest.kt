@@ -8,20 +8,27 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlinx.coroutines.runBlocking
+import cc.stkmn.kalplan.data.AppRepository
+import cc.stkmn.kalplan.ui.generateDebugCases
 
 @RunWith(AndroidJUnit4::class)
 class AppSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
-    @Test fun onboardingSamplesDetailAndSafeConfirmation() {
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Load samples").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Load samples").performClick()
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Praxis Beispiel").fetchSemanticsNodes().isNotEmpty() }
+    @Test fun syntheticDetailSafeConfirmationAndModernSettings() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        runBlocking {
+            val repository = AppRepository.get(context)
+            repository.load()
+            repository.update { it.copy(settings = it.settings.copy(debug = true)) }
+            generateDebugCases(context, repository)
+        }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Testauftrag, erreichbar").fetchSemanticsNodes().isNotEmpty() }
         screenshot("list")
-        compose.onNodeWithText("Praxis Beispiel").performClick()
-        compose.onNodeWithText("Sample, sending disabled").assertDoesNotExist()
+        compose.onNodeWithText("Testauftrag, erreichbar").performClick()
         screenshot("detail")
         compose.onNodeWithText("Edit details").performScrollTo().performClick()
-        compose.onNodeWithText("Date (YYYY-MM-DD)").performTextReplacement(java.time.LocalDate.now().plusDays(1).toString())
+        compose.onNodeWithText("Date (MM/DD/YYYY)").performTextReplacement(java.time.LocalDate.now().plusDays(1).format(java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy")))
         compose.onNodeWithText("Time (HH:MM)").performTextReplacement("14:00")
         compose.onNodeWithText("Confirm details").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Accept").fetchSemanticsNodes().isNotEmpty() }
@@ -33,7 +40,7 @@ class AppSmokeTest {
         compose.onNodeWithText("Back").performScrollTo().performClick()
         compose.onNodeWithContentDescription("Back").performClick()
         compose.onNodeWithText("Settings").performClick()
-        compose.onNodeWithText("Mail accounts").assertExists()
+        compose.onNodeWithText("Design and language").assertExists()
         screenshot("settings")
     }
     private fun screenshot(name: String) {

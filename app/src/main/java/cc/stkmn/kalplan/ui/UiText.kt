@@ -1,6 +1,7 @@
 package cc.stkmn.kalplan.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalConfiguration
 import cc.stkmn.kalplan.data.StoredCandidate
 import cc.stkmn.kalplan.data.StoredRequest
@@ -8,12 +9,26 @@ import java.time.*
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
-@Composable fun tr(de: String, en: String): String = if (LocalConfiguration.current.locales[0].language == "de") de else en
-fun appointmentTime(candidate: StoredCandidate?): String {
+val LocalAppLanguage = staticCompositionLocalOf { "SYSTEM" }
+@Composable fun tr(de: String, en: String): String {
+    val configured = LocalAppLanguage.current
+    val german = configured == "DE" || configured == "SYSTEM" && LocalConfiguration.current.locales[0].language == "de"
+    return if (german) de else en
+}
+@Composable fun appointmentTime(candidate: StoredCandidate?): String {
     val start = candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) } ?: return "?"
     val end = candidate.endMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    return start.format(DateTimeFormatter.ofPattern("EEE, dd.MM.yyyy · HH:mm", Locale.getDefault())) + (end?.let { " – " + it.format(DateTimeFormatter.ofPattern("HH:mm")) } ?: "")
+    val configured = LocalAppLanguage.current
+    val locale = when (configured) { "DE" -> Locale.GERMANY; "EN" -> Locale.US; else -> Locale.getDefault() }
+    val pattern = if (locale.language == "de") "EEE, dd.MM.yyyy · HH:mm" else "EEE, MM/dd/yyyy · HH:mm"
+    return start.format(DateTimeFormatter.ofPattern(pattern, locale)) + (end?.let { " – " + it.format(DateTimeFormatter.ofPattern("HH:mm")) } ?: "")
 }
+fun localDateText(date: LocalDate, locale: Locale = Locale.getDefault()): String =
+    date.format(DateTimeFormatter.ofPattern(if (locale.language == "de") "dd.MM.yyyy" else "MM/dd/yyyy", locale))
+fun parseLocalDateText(value: String, locale: Locale = Locale.getDefault()): LocalDate =
+    runCatching { LocalDate.parse(value) }.getOrElse {
+        LocalDate.parse(value, DateTimeFormatter.ofPattern(if (locale.language == "de") "dd.MM.yyyy" else "MM/dd/yyyy", locale))
+    }
 @Composable fun statusText(status: String): String = when(status) {
     "FEASIBLE" -> tr("Machbar", "Feasible")
     "POSSIBLE" -> tr("Möglicherweise machbar", "Possibly feasible")

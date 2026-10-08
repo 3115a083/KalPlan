@@ -9,7 +9,6 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,7 +23,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,7 +37,6 @@ import cc.stkmn.kalplan.infrastructure.widget.RequestSurfaces
 import cc.stkmn.kalplan.ui.theme.*
 import kotlinx.coroutines.launch
 import java.time.*
-import java.util.UUID
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,7 +50,6 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
     var section by rememberSaveable { mutableStateOf("REQUESTS") }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     var replyAction by rememberSaveable { mutableStateOf<String?>(null) }
-    var importing by rememberSaveable { mutableStateOf(false) }
     var search by rememberSaveable { mutableStateOf("") }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
@@ -79,7 +75,9 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
         }
     }
     val theme = runCatching { ThemeChoice.valueOf(state.settings.theme) }.getOrDefault(ThemeChoice.KALPLAN)
-    KalPlanTheme(choice = theme, primaryHex = state.settings.primaryHex) {
+    val dark = when (state.settings.themeMode) { "LIGHT" -> false; "DARK" -> true; else -> isSystemInDarkTheme() }
+    CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+    KalPlanTheme(choice = theme, darkTheme = dark, primaryHex = state.settings.primaryHex) {
         val request = state.requests.firstOrNull { it.id == selected }
         BackHandler(selected != null || section == "SWIPE") { if (replyAction != null) replyAction = null else { selected = null; section = "REQUESTS" } }
         Scaffold(
@@ -95,7 +93,6 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, tr("Menü", "Menu")) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text(tr("Swipe-Ansicht", "Swipe view")) }, onClick = { section = "SWIPE"; menu = false })
-                            DropdownMenuItem(text = { Text(tr("Text / E-Mail importieren", "Import text / email")) }, onClick = { importing = true; menu = false })
                             DropdownMenuItem(text = { Text(if (showHistory) tr("Offene Anfragen", "Pending requests") else tr("Verlauf anzeigen", "Show history")) }, onClick = { showHistory = !showHistory; menu = false })
                         }
                     }
@@ -110,9 +107,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                     }
                 }
             },
-            floatingActionButton = {
-                if (selected == null && section in setOf("REQUESTS", "UNCLEAR", "CALENDAR")) FloatingActionButton(onClick = { importing = true }) { Icon(Icons.Outlined.Add, tr("Anfrage hinzufügen", "Add request")) }
-            }
+            floatingActionButton = { }
         ) { padding ->
             Column(Modifier.fillMaxSize().padding(padding)) {
                 if (busy || !ready && error == null) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -136,9 +131,8 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                                 if (requests.isEmpty()) item {
                                     Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Text(tr("Hier ist noch Platz für deine Planung.", "Ready for your next appointment."), style = MaterialTheme.typography.titleMedium)
-                                        Text(tr("Richte ein Mailkonto ein oder importiere einen Text. Mit Beispieldaten kannst du die Ansichten ausprobieren.", "Set up an email account or import text. Sample data lets you explore the screens."))
+                                        Text(tr("Richte ein Mailkonto ein. KalPlan verarbeitet eingehende Anfragen automatisch.", "Set up an email account. KalPlan processes incoming requests automatically."))
                                         Button(onClick = { section = "SETTINGS" }) { Text(tr("Einrichten", "Set up")) }
-                                        OutlinedButton(onClick = { run { addSamples(repository) } }) { Text(tr("Beispiele laden", "Load samples")) }
                                     } }
                                 }
                                 items(requests, key = { it.id }) { r -> RequestCard(r, state.settings, planner, onClick = { selected = r.id }) }
@@ -148,15 +142,8 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                 }
             }
         }
-        if (importing && ready) ImportRequestDialog(onDismiss = { importing = false }, onSave = { sender, subject, body ->
-            importing = false
-            run {
-                val r = RequestFactory.create(UUID.randomUUID().toString(), sender, subject, body, System.currentTimeMillis(), repository.data.value)
-                repository.update { it.copy(requests = it.requests + r) }
-                selected = r.id
-            }
-        })
         error?.let { message -> AlertDialog(onDismissRequest = { error = null }, title = { Text(tr("Aktion prüfen", "Check action")) }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("OK") } }) }
+    }
     }
 }
 
@@ -178,15 +165,15 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
             Box(Modifier.width(4.dp).fillMaxHeight().background(border))
             Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    Text("P${priority.rank}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    PriorityMark(priority.score)
                     StatusPill(status)
                 }
                 Text(appointmentTime(request.candidate ?: request.candidates.firstOrNull()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Text(request.subject, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
-                if (request.labels.isNotEmpty()) Text(request.labels.joinToString(" · "), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                LabelChips(request.labels, settings.labels)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(if (request.candidate?.mode == "ONLINE") tr("Online", "Online") else request.candidate?.location.orEmpty().ifBlank { request.sender }, maxLines = 1, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    if (settings.value.enabled && request.candidate != null) Text("≈ " + String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f €", PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, settings.value).totalCents / 100.0), fontWeight = FontWeight.SemiBold)
+                    if (settings.value.enabled && request.candidate != null) Text("≈ " + String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f €", PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, PlanningPolicy.valueSettings(request, settings)).totalCents / 100.0), fontWeight = FontWeight.SemiBold)
                 }
                 if (priority.stale) Text(tr("Veraltet. Weiterhin bearbeitbar.", "Stale. Still available for review."), style = MaterialTheme.typography.labelSmall)
                 if (request.demo) Text(tr("Beispiel, Versand gesperrt", "Sample, sending disabled"), style = MaterialTheme.typography.labelSmall)
@@ -195,29 +182,25 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
     }
 }
 
-@Composable
-private fun ImportRequestDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
-    var sender by rememberSaveable { mutableStateOf("") }
-    var subject by rememberSaveable { mutableStateOf("") }
-    var body by rememberSaveable { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Text importieren", "Import text")) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(tr("Der Import bleibt lokal. Für Antworten per SMTP ist eine synchronisierte Quellmail nötig.", "The import stays local. SMTP replies require a synced source email."))
-            OutlinedTextField(sender, { sender = it.take(320) }, label = { Text(tr("Absender", "Sender")) })
-            OutlinedTextField(subject, { subject = it.take(500) }, label = { Text(tr("Betreff", "Subject")) })
-            OutlinedTextField(body, { body = it.take(100_000) }, label = { Text(tr("E-Mail-Text", "Email text")) }, minLines = 6)
-        }
-    }, confirmButton = { TextButton(enabled = body.isNotBlank(), onClick = { onSave(sender, subject.ifBlank { "Anfrage / Request" }, body) }) { Text(tr("Analysieren", "Analyze")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
+@Composable fun PriorityMark(score: Int) {
+    val mark = when { score >= 80 -> "⇈"; score >= 65 -> "↑"; score >= 45 -> "—"; score >= 30 -> "↓"; else -> "⇊" }
+    val description = when { score >= 80 -> tr("Deutlich erhöht", "Much higher"); score >= 65 -> tr("Erhöht", "Higher"); score >= 45 -> tr("Neutral", "Neutral"); score >= 30 -> tr("Niedriger", "Lower"); else -> tr("Deutlich niedriger", "Much lower") }
+    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+        Text(mark, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
+    }
 }
 
-private suspend fun addSamples(repository: AppRepository) {
-    val day = LocalDate.now().plusDays(1)
-    val state = repository.data.value
-    val requests = listOf(
-        Triple("Praxis Beispiel", "Medizin", "Datum: $day\nBeginn: 14:00\nEnde: 16:00\nOrt: Musterstraße 12, 44137 Dortmund"),
-        Triple("Firma Netzwerk GmbH", "LWL", "Datum: $day\nBeginn: 10:00\nEnde: 12:00\nOrt: Essen"),
-        Triple("Online-Beratung", "Beratung", "Datum: $day\nBeginn: 17:00\nEnde: 18:00\nOrt oder Online: Online"),
-        Triple("Neue Anfrage ohne Termin", "", "Können Sie nächste Woche einen Auftrag übernehmen? Datum und Ort folgen.")
-    ).mapIndexed { i, (title, label, text) -> RequestFactory.create("demo-$i", "beispiel@example.invalid", title, "$label\n$text", System.currentTimeMillis(), state).copy(demo = true) }
-    repository.update { it.copy(requests = it.requests.filterNot { old -> old.demo } + requests) }
+@OptIn(ExperimentalLayoutApi::class)
+@Composable fun LabelChips(labels: List<String>, policies: List<LabelPolicy>, max: Int = Int.MAX_VALUE) {
+    if (labels.isEmpty()) return
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        labels.take(max).forEach { label ->
+            val color = policies.firstOrNull { it.name == label }?.colorHex?.takeIf { it.matches(Regex("[0-9a-fA-F]{6}")) }
+                ?.let { Color(android.graphics.Color.parseColor("#$it")) } ?: MaterialTheme.colorScheme.secondary
+            Surface(shape = RoundedCornerShape(8.dp), color = color.copy(alpha = 0.14f), border = BorderStroke(1.dp, color.copy(alpha = 0.45f))) {
+                Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = color, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+        if (labels.size > max) Text("+${labels.size - max}", style = MaterialTheme.typography.labelMedium)
+    }
 }

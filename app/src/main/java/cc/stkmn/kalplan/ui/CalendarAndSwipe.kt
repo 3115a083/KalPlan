@@ -12,6 +12,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -76,12 +77,19 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
                             if (hourEvents.isEmpty() && hourRequests.isEmpty()) HorizontalDivider(Modifier.padding(vertical = 16.dp))
                             hourEvents.forEach { e ->
                                 val isReservation = state.requests.any { it.reservationEventId == e.id.substringBefore('@') }
-                                Surface(color = if (isReservation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else (colors[e.calendarId] ?: MaterialTheme.colorScheme.secondary).copy(alpha = 0.16f),
+                                val privacy = state.calendars.firstOrNull { it.id == e.calendarId }
+                                val travel = privacy?.travelCalendar == true
+                                var expanded by rememberSaveable(e.id) { mutableStateOf(false) }
+                                Surface(modifier = Modifier.clickable(enabled = !e.description.isNullOrBlank()) { expanded = !expanded }, color = if (isReservation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else (colors[e.calendarId] ?: MaterialTheme.colorScheme.secondary).copy(alpha = 0.16f),
                                     shape = RoundedCornerShape(12.dp), border = if (isReservation) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null) {
                                     Column(Modifier.fillMaxWidth().padding(12.dp)) {
                                         Text(e.start.atZone(zone).toLocalTime().toString() + " – " + e.end.atZone(zone).toLocalTime(), style = MaterialTheme.typography.labelLarge)
-                                        Text((if (isReservation) tr("[Reserviert] ", "[Reserved] ") else "") + (e.title ?: tr("Belegt", "Busy")))
+                                        Text((if (isReservation) tr("[Reserviert] ", "[Reserved] ") else if (travel) tr("Fahrt · ", "Travel · ") else "") + (e.title ?: tr("Belegt", "Busy")))
                                         e.location?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                                        if (!e.description.isNullOrBlank()) {
+                                            Text(if (expanded) tr("Beschreibung ausblenden", "Hide description") else tr("Beschreibung anzeigen", "Show description"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                                            if (expanded) Text(e.description.take(10_000), style = MaterialTheme.typography.bodySmall)
+                                        }
                                     }
                                 }
                             }
@@ -91,7 +99,7 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
                                     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(if (reserved) tr("[Reserviert]", "[Reserved]") else tr("Anfrage", "Request"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                                         Text(r.subject, fontWeight = FontWeight.SemiBold)
-                                        Text(r.labels.joinToString(" · "), style = MaterialTheme.typography.labelSmall)
+                                        LabelChips(r.labels, state.settings.labels, 3)
                                     }
                                 }
                             }
@@ -119,16 +127,21 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
             Button(onClick = { visited = emptyList() }) { Text(tr("Erneut ansehen", "Review again")) }
         } else {
             var drag by remember(request.id) { mutableStateOf(0f) }
+            val threshold = 180f
             Box(Modifier.weight(1f).fillMaxWidth().pointerInput(request.id) {
                 detectHorizontalDragGestures(onHorizontalDrag = { change, amount -> change.consume(); drag += amount }, onDragCancel = { drag = 0f }, onDragEnd = {
-                    if (drag > 150) onAction(request.id, "accept")
-                    else if (drag < -150) { onLater(request.id); visited = visited + request.id }
+                    if (drag > threshold) onAction(request.id, "accept")
+                    else if (drag < -threshold) { onLater(request.id); visited = visited + request.id }
                     drag = 0f
                 })
             }, contentAlignment = Alignment.Center) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    RequestCard(request, state.settings, planner) { onOpen(request.id) }
-                    Text(tr("Rechts: Annahme prüfen. Links: später. Kein Swipe sendet eine Mail.", "Right: review acceptance. Left: later. Swiping never sends mail."), style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(tr("Später", "Later"), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                    Text(tr("Prüfen", "Review"), color = Color(0xFF168A55), fontWeight = FontWeight.Bold)
+                }
+                Column(Modifier.fillMaxWidth().graphicsLayer { translationX = drag; rotationZ = drag / 90f }, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    RequestCard(request, state.settings, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
+                    Text(when { drag > 40 -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -40 -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {

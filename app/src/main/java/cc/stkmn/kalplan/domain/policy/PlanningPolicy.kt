@@ -10,11 +10,21 @@ data class ValueResult(val totalCents: Long, val workCents: Long, val travelCent
 
 object PlanningPolicy {
     fun labels(sender: String, subject: String, body: String, policies: List<LabelPolicy>): List<String> {
-        val text = "$subject\n$body".lowercase()
         return policies.filter { rule ->
-            (rule.keywords.isEmpty() || rule.keywords.any { it.isNotBlank() && text.contains(it.lowercase()) }) &&
+            val text = when (rule.searchIn) {
+                "SUBJECT" -> subject
+                "BODY" -> body
+                else -> "$subject\n$body"
+            }.lowercase()
+            val terms = rule.keywords.map { it.trim().lowercase() }.filter { it.isNotBlank() }
+            val termsMatch = when {
+                terms.isEmpty() -> true
+                rule.keywordMode == "ALL" -> terms.all(text::contains)
+                else -> terms.any(text::contains)
+            }
+            termsMatch &&
                 (rule.senderContains.isBlank() || sender.contains(rule.senderContains, true)) &&
-                (rule.keywords.isNotEmpty() || rule.senderContains.isNotBlank())
+                (terms.isNotEmpty() || rule.senderContains.isNotBlank())
         }.map { it.name }.distinct()
     }
     fun priority(request: StoredRequest, settings: Settings, now: Long = System.currentTimeMillis()): PriorityResult {
@@ -49,11 +59,32 @@ object PlanningPolicy {
         val flat = settings.flatCents + band
         return ValueResult(work + travel + distance + flat, work, travel, distance, flat, billed)
     }
+    fun valueSettings(request: StoredRequest, settings: Settings): ValueSettings {
+        val override = settings.labels.firstOrNull { it.name in request.labels && it.valueOverride != null }?.valueOverride
+            ?: return settings.value
+        return settings.value.copy(
+            workCentsPerHour = override.workCentsPerHour ?: settings.value.workCentsPerHour,
+            travelCentsPerHour = override.travelCentsPerHour ?: settings.value.travelCentsPerHour,
+            centsPerKm = override.centsPerKm ?: settings.value.centsPerKm,
+            flatCents = override.flatCents ?: settings.value.flatCents,
+            billingStepMinutes = override.billingStepMinutes ?: settings.value.billingStepMinutes,
+            roundUp = override.roundUp ?: settings.value.roundUp,
+            roundTrip = override.roundTrip ?: settings.value.roundTrip
+        )
+    }
     fun syncPaused(settings: Settings, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
         val day = now.dayOfWeek.value
         if (day in settings.pausedWeekdays || settings.pauseWeekends && day >= 6) return true
         val from = runCatching { LocalDate.parse(settings.pauseFrom) }.getOrNull()
         val until = runCatching { LocalDate.parse(settings.pauseUntil) }.getOrNull()
-        return from != null && until != null && now.toLocalDate() in from..until
+        if (from != null && until != null && now.toLocalDate() in from..until) return true
+        val quietFrom = runCatching { LocalTime.parse(settings.quietFrom) }.getOrNull()
+        val quietUntil = runCatching { LocalTime.parse(settings.quietUntil) }.getOrNull()
+        if (quietFrom != null && quietUntil != null) {
+            val time = now.toLocalTime()
+            if (quietFrom == quietUntil || quietFrom < quietUntil && time >= quietFrom && time < quietUntil ||
+                quietFrom > quietUntil && (time >= quietFrom || time < quietUntil)) return true
+        }
+        return false
     }
 }

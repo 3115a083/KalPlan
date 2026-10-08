@@ -33,7 +33,19 @@ data class CalendarPrivacy(
     val showTitle: Boolean = false,
     val showLocation: Boolean = false,
     val showDescription: Boolean = false,
-    val useHiddenLocationForRouting: Boolean = false
+    val useHiddenLocationForRouting: Boolean = false,
+    val travelCalendar: Boolean = false
+)
+
+@Serializable
+data class ValueOverride(
+    val workCentsPerHour: Long? = null,
+    val travelCentsPerHour: Long? = null,
+    val centsPerKm: Long? = null,
+    val flatCents: Long? = null,
+    val billingStepMinutes: Int? = null,
+    val roundUp: Boolean? = null,
+    val roundTrip: Boolean? = null
 )
 
 @Serializable
@@ -47,7 +59,11 @@ data class LabelPolicy(
     val shortThresholdMinutes: Int? = null,
     val shortScore: Int = 0,
     val requiredLabels: Set<String> = emptySet(),
-    val excludedLabels: Set<String> = emptySet()
+    val excludedLabels: Set<String> = emptySet(),
+    val colorHex: String = "6750A4",
+    val keywordMode: String = "ANY",
+    val searchIn: String = "SUBJECT_AND_BODY",
+    val valueOverride: ValueOverride? = null
 )
 
 @Serializable
@@ -71,6 +87,8 @@ data class Settings(
     val pauseWeekends: Boolean = false,
     val pauseFrom: String = "",
     val pauseUntil: String = "",
+    val quietFrom: String = "",
+    val quietUntil: String = "",
     val pausedWeekdays: Set<Int> = emptySet(),
     val defaultDuration: Int = 60,
     val staleHours: Int = 72,
@@ -80,9 +98,12 @@ data class Settings(
     val originName: String = "",
     val originAddress: String = "",
     val theme: String = "KALPLAN",
+    val themeMode: String = "SYSTEM",
+    val language: String = "SYSTEM",
     val primaryHex: String = "",
     val acceptTemplate: String = "Guten Tag,\n\nich kann den Termin {date} um {time} übernehmen. Bitte bestätigen Sie den Auftrag.\n\nMit freundlichen Grüßen",
     val declineTemplate: String = "Guten Tag,\n\nleider kann ich diesen Auftrag nicht übernehmen.\n\nMit freundlichen Grüßen",
+    val sendDeclineReply: Boolean = false,
     val reservationCalendarId: String = "",
     val reservationDescription: String = "NONE",
     val reservationTemplate: String = "KalPlan-ID: {id}\n{subject}\n{date} {time}",
@@ -96,11 +117,7 @@ data class Settings(
     val debugTestAddress: String = "",
     val debugSendToTest: Boolean = false,
     val value: ValueSettings = ValueSettings(),
-    val labels: List<LabelPolicy> = listOf(
-        LabelPolicy("Medizin", listOf("medizin", "arzt", "praxis"), score = 30),
-        LabelPolicy("LWL", listOf("lwl"), score = -8, shortThresholdMinutes = 120, shortScore = -35),
-        LabelPolicy("Beratung", listOf("beratung", "consultation"), score = 10)
-    )
+    val labels: List<LabelPolicy> = emptyList()
 )
 
 @Serializable
