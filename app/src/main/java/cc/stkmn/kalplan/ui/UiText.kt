@@ -19,7 +19,8 @@ val LocalAppLanguage = staticCompositionLocalOf { "SYSTEM" }
     val start = candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) } ?: return "?"
     val end = candidate.endMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
     val configured = LocalAppLanguage.current
-    val locale = when (configured) { "DE" -> Locale.GERMANY; "EN" -> Locale.US; else -> Locale.getDefault() }
+    val systemLocale = LocalConfiguration.current.locales[0]
+    val locale = when (configured) { "DE" -> Locale.GERMANY; "EN" -> Locale.US; else -> systemLocale }
     val pattern = if (locale.language == "de") "EEE, dd.MM.yyyy · HH:mm" else "EEE, MM/dd/yyyy · HH:mm"
     return start.format(DateTimeFormatter.ofPattern(pattern, locale)) + (end?.let { " – " + it.format(DateTimeFormatter.ofPattern("HH:mm")) } ?: "")
 }

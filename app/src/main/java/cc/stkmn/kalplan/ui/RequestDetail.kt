@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -137,7 +138,8 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
 private fun EditCandidateDialog(request: StoredRequest, policies: List<LabelPolicy>, onDismiss: () -> Unit, onSave: (StoredCandidate, List<String>) -> Unit) {
     val c = request.candidate ?: request.candidates.firstOrNull()
     val initial = c?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()) }
-    val inputLocale = when (LocalAppLanguage.current) { "DE" -> java.util.Locale.GERMANY; "EN" -> java.util.Locale.US; else -> java.util.Locale.getDefault() }
+    val systemLocale = LocalConfiguration.current.locales[0]
+    val inputLocale = when (LocalAppLanguage.current) { "DE" -> java.util.Locale.GERMANY; "EN" -> java.util.Locale.US; else -> systemLocale }
     var date by rememberSaveable { mutableStateOf(initial?.toLocalDate()?.let { localDateText(it, inputLocale) }.orEmpty()) }
     var time by rememberSaveable { mutableStateOf(initial?.toLocalTime()?.toString()?.take(5).orEmpty()) }
     var offsetText by rememberSaveable { mutableStateOf("") }
