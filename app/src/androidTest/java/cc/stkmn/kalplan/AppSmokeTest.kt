@@ -26,7 +26,7 @@ class AppSmokeTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Testauftrag, erreichbar").fetchSemanticsNodes().isNotEmpty() }
         screenshot("list")
         compose.onNodeWithText("Testauftrag, erreichbar").performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Overview").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Info").fetchSemanticsNodes().isNotEmpty() }
         screenshot("detail")
         compose.onNodeWithText("Edit details").performScrollTo().performClick()
         compose.onNodeWithText("Date (MM/DD/YYYY)").performTextReplacement(java.time.LocalDate.now().plusDays(1).format(java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy")))

@@ -52,7 +52,9 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             Text(request.sender, style = MaterialTheme.typography.bodySmall)
             LabelChips(request.labels, state.settings.labels)
             PrimaryTabRow(selectedTabIndex = tab) {
-                listOf(tr("Übersicht", "Overview"), tr("E-Mail", "Email"), tr("Anhänge", "Files"), tr("Analyse", "Analysis")).forEachIndexed { i, title -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, style = MaterialTheme.typography.labelMedium) }) }
+                listOf(tr("Info", "Info"), tr("E-Mail", "Mail"), tr("Dateien", "Files"), tr("Prüfung", "Check")).forEachIndexed { i, title ->
+                    Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, maxLines = 1, style = MaterialTheme.typography.labelMedium) })
+                }
             }
             when(tab) {
                 0 -> {
@@ -256,101 +258,3 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
         }, color = MaterialTheme.colorScheme.primary) }
     }
     if (confirm) AlertDialog(onDismissRequest = { if (!busy) confirm = false }, title = { Text(tr("Versand bestätigen", "Confirm send")) },
-        text = { Text((if (accept) tr("Annehmen", "Accept") else tr("Ablehnen", "Decline")) + "\n${recipient.orEmpty()}\n${appointmentTime(candidate)}\n\n" + tr("Vor einer Annahme prüft KalPlan den Kalender erneut. Bei Konflikten, ungeklärter Fahrt oder fehlendem Zugriff stoppt der Versand.", "Before acceptance, KalPlan checks the calendar again. Conflicts, unchecked travel or missing access stop sending.")) },
-        confirmButton = { TextButton(enabled = allowed, onClick = { confirm = false; onRun { result = ReplyCoordinator(context, repository).send(request.id, accept, body, recipient.orEmpty(), request) } }) { Text(if (simulation) tr("Simulation bestätigen", "Confirm simulation") else tr("Jetzt senden", "Send now")) } },
-        dismissButton = { TextButton(enabled = !busy, onClick = { confirm = false }) { Text(tr("Abbrechen", "Cancel")) } })
-}
-
-@Composable
-private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: String, nextLocation: String, repository: AppRepository, busy: Boolean,
-    onRun: (suspend () -> Unit) -> Unit, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var origin by rememberSaveable { mutableStateOf(originAddress) }
-    var destination by rememberSaveable { mutableStateOf(if (request.candidate?.mode == "ONLINE") state.settings.originAddress else request.candidate?.location.orEmpty()) }
-    var afterDestination by rememberSaveable { mutableStateOf(request.manualAfterDestination.ifBlank { nextLocation }) }
-    var afterMinutes by rememberSaveable { mutableStateOf(request.travelAfterMinutes?.toString().orEmpty()) }
-    var minutes by rememberSaveable { mutableStateOf(request.travelMinutes?.toString().orEmpty()) }
-    var km by rememberSaveable { mutableStateOf(request.distanceKm?.toString().orEmpty()) }
-    var provider by rememberSaveable { mutableStateOf(state.settings.routingProvider.takeIf { it in listOf("GOOGLE", "HERE", "TOMTOM", "ORS", "GRAPHHOPPER") } ?: "ORS") }
-    var key by remember { mutableStateOf("") }
-    var oCoordinates by rememberSaveable { mutableStateOf("") }
-    var dCoordinates by rememberSaveable { mutableStateOf("") }
-    AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Fahrtzeit manuell", "Manual travel check")) }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EditField(tr("Startort", "Origin"), origin) { origin = it }
-            Text(tr("Ziel: ", "Destination: ") + destination.ifBlank { tr("Fehlt. Zuerst Termindetails korrigieren.", "Missing. Correct appointment details first.") })
-            Text(tr("Karte öffnen überträgt die beiden Adressen an Google Maps.", "Opening the map sends both addresses to Google Maps."), style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(enabled = origin.isNotBlank() && destination.isNotBlank(), onClick = {
-                val uri = Uri.parse("https://www.google.com/maps/dir/").buildUpon().appendQueryParameter("api", "1").appendQueryParameter("origin", origin).appendQueryParameter("destination", destination).appendQueryParameter("travelmode", "driving").build()
-                runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
-            }) { Text(tr("Karte öffnen", "Open map")) }
-            Text(tr("Oder API-Abfrage: nur diese Koordinaten verlassen das Gerät. Kein automatisches Geocoding. Ergebnis ist eine Schätzung ohne garantierte Verkehrsprognose.", "Or query an API: only these coordinates leave the device. No automatic geocoding. Results are estimates without guaranteed traffic prediction."))
-            ChoiceRow(listOf("GOOGLE", "HERE", "TOMTOM", "ORS", "GRAPHHOPPER"), provider) { provider = it }
-            EditField(tr("Start: Breitengrad,Längengrad", "Origin: latitude,longitude"), oCoordinates) { oCoordinates = it }
-            EditField(tr("Ziel: Breitengrad,Längengrad", "Destination: latitude,longitude"), dCoordinates) { dCoordinates = it }
-            SecretField("API-Key", key) { key = it }
-            Button(enabled = !busy, onClick = { onRun {
-                val apiKey = key.ifBlank { repository.routingKey(provider) }
-                if (key.isNotBlank()) repository.saveRoutingKey(provider, key)
-                val result = ManualRouting(repository).route(provider, RoutePoint.parse(oCoordinates), RoutePoint.parse(dCoordinates), apiKey)
-                minutes = result.minutes.toString(); km = result.km.toString()
-            } }) { Text(tr("Kostenpflichtige Abfrage auslösen", "Run metered API query")) }
-            Text(tr("Tageslimit je Anbieter: ", "Daily limit per provider: ") + state.settings.routingDailyLimit)
-            EditField(tr("Fahrtminuten zum Termin", "Travel minutes to appointment"), minutes) { minutes = it }
-            EditField(tr("Entfernung, km", "Distance, km"), km) { km = it }
-            OutlinedButton(enabled = !busy, onClick = {
-                onRun {
-                    val o = RoutePoint.parse(oCoordinates); val d = RoutePoint.parse(dCoordinates)
-                    val estimate = cc.stkmn.kalplan.domain.proximity.ApproximateTravelEstimator().estimate(
-                        cc.stkmn.kalplan.domain.model.GeoPoint(o.latitude, o.longitude), cc.stkmn.kalplan.domain.model.GeoPoint(d.latitude, d.longitude))
-                    minutes = estimate.estimatedMinutesMax.toString(); km = estimate.estimatedRoadKmMax.toString()
-                }
-            }) { Text(tr("Grobe Offline-Näherung aus Koordinaten", "Coarse offline estimate from coordinates")) }
-            Text(tr("Die Offline-Näherung kennt keine Straßen oder Hindernisse. Prüfe die Fahrt selbst.", "The offline estimate does not know roads or obstacles. Review the trip yourself."), style = MaterialTheme.typography.bodySmall)
-            EditField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
-            EditField(tr("Fahrtminuten zum Folgetermin", "Travel minutes to following appointment"), afterMinutes) { afterMinutes = it }
-        }
-    }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis(),
-                manualOrigin = origin, manualAfterDestination = afterDestination,
-                routeOrigin = origin, routeDestination = destination, routeAfterOrigin = destination, routeAfterDestination = afterDestination,
-                travelAfterMinutes = afterMinutes.toIntOrNull()?.also { n -> require(n in 0..10080) },
-                travelAfterCheckedMillis = if (afterMinutes.toIntOrNull() != null) System.currentTimeMillis() else null) }; onDismiss() } }) { Text(tr("Schätzung übernehmen", "Use estimate")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
-}
-
-@Composable
-private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit) {
-    var name by rememberSaveable { mutableStateOf(request.subject.take(60)) }
-    var acceptOverride by rememberSaveable { mutableStateOf("") }
-    var declineOverride by rememberSaveable { mutableStateOf("") }
-    var rules by remember { mutableStateOf(emptyList<ExtractorRule>()) }
-    val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis)) }
-    val candidates = remember(input) { GuidedRuleFactory.candidates(input) }
-    var preview by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Geführtes Extraktionsprofil", "Guided extraction profile")) }, text = {
-        Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EditField(tr("Profilname", "Profile name"), name) { name = it }
-            Text(tr("Ordne erkannte Zeilen einem Feld zu. Regeln werden erst nach Speichern und Zuordnung zu einem Mailordner aktiv.", "Assign detected lines to a field. Rules become active after saving and assigning a mail folder."))
-            candidates.forEachIndexed { i, c ->
-                Text("${c.label}: ${c.value.take(100)}", style = MaterialTheme.typography.bodySmall)
-                var semantic by remember(i) { mutableStateOf("DATE") }
-                ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic, label = { semanticName(it) }) { semantic = it }
-                TextButton(onClick = {
-                    val r = GuidedRuleFactory.extractor(c, "field_$i", SemanticField.valueOf(semantic))
-                    rules = rules.filterNot { it.key == r.key } + r
-                }) { Text(tr("Feld hinzufügen", "Add field")) }
-            }
-            EditField(tr("Annahmevorlage, leer = global", "Acceptance template, empty = global"), acceptOverride) { acceptOverride = it }
-            EditField(tr("Absagevorlage, leer = global", "Decline template, empty = global"), declineOverride) { declineOverride = it }
-            Text("${rules.size} " + tr("Regeln", "rules"))
-            OutlinedButton(enabled = rules.isNotEmpty(), onClick = {
-                val p = ExtractionProfile(id = "preview", name = name, extractors = rules, acceptTemplate = acceptOverride.takeIf { it.isNotBlank() }, declineTemplate = declineOverride.takeIf { it.isNotBlank() })
-                val r = KalPlanExtractionPipeline().extract(input, p)
-                preview = r.fields.values.joinToString("\n") { "${it.semantic}: ${it.value}" } + "\n" + r.issues.joinToString { it.code }
-            }) { Text(tr("Vorschau testen", "Test preview")) }
-            Text(preview, style = MaterialTheme.typography.bodySmall)
-        }
-    }, confirmButton = { TextButton(enabled = rules.isNotEmpty() && name.isNotBlank(), onClick = {
-        val p = ExtractionProfile(id = UUID.randomUUID().toString(), name = name, extractors = rules)
-        if (ProfileValidator().validate(p).isEmpty()) onSave(p)
-    }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
-}
