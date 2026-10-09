@@ -60,7 +60,7 @@ object PlanningPolicy {
         return ValueResult(work + travel + distance + flat, work, travel, distance, flat, billed)
     }
     fun valueSettings(request: StoredRequest, settings: Settings): ValueSettings {
-        val override = settings.labels.firstOrNull { it.name in request.labels && it.valueOverride != null }?.valueOverride
+        val override = settings.labels.filter { it.name in request.labels && it.valueOverride != null }.maxByOrNull { it.score }?.valueOverride
             ?: return settings.value
         return settings.value.copy(
             workCentsPerHour = override.workCentsPerHour ?: settings.value.workCentsPerHour,
