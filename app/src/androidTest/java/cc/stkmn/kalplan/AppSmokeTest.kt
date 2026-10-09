@@ -43,12 +43,21 @@ class AppSmokeTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Design and language").assertExists()
         screenshot("settings")
+        compose.onNodeWithText("Design and language").performClick()
         compose.onNodeWithText("Labels and sorting").performScrollTo().performClick()
         compose.onNodeWithText("Label", useUnmergedTree = true).performScrollTo().performClick()
         compose.onNodeWithText("Assign automatically when").assertExists()
         compose.onNodeWithText("Color, e.g. 6750A4").assertDoesNotExist()
         screenshot("label-editor")
         compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Labels and sorting").performClick()
+        var syncVisible = false
+        repeat(6) {
+            if (!syncVisible) {
+                syncVisible = compose.onAllNodesWithText("Synchronization").fetchSemanticsNodes().isNotEmpty()
+                if (!syncVisible) compose.onRoot().performTouchInput { swipeUp() }
+            }
+        }
         compose.onNodeWithText("Synchronization").performScrollTo().performClick()
         compose.onNodeWithText("From").performScrollTo().performClick()
         compose.onNodeWithText("Choose time").assertExists()
