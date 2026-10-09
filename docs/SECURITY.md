@@ -1,4 +1,4 @@
-# Security, development build 0.3.0
+# Security, development build 0.4.0
 
 See AUDIT_2026-10-07.md for implemented controls, findings and remaining validation.
 

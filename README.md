@@ -1,4 +1,4 @@
-# KalPlan 0.3.0-dev
+# KalPlan 0.4.0-dev
 
 Android app for reviewing appointment requests, checking device calendars and planning replies. This branch turns the original scaffold into a functional development build using the Dispatcher design and icon 1.
 

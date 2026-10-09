@@ -10,7 +10,14 @@ import cc.stkmn.kalplan.domain.policy.*
 import cc.stkmn.kalplan.infrastructure.calendar.AndroidCalendarReader
 import java.time.*
 
-data class Assessment(val status: String, val reasons: List<String>, val events: List<CalendarEventRef>, val origin: String, val nextLocation: String = "")
+data class Assessment(
+    val status: String,
+    val reasons: List<String>,
+    val events: List<CalendarEventRef>,
+    val origin: String,
+    val nextLocation: String = "",
+    val travelCalendarIds: Set<String> = emptySet()
+)
 
 class Planner(private val context: Context, private val repository: AppRepository) {
     suspend fun assess(request: StoredRequest): Assessment {
@@ -91,6 +98,6 @@ class Planner(private val context: Context, private val repository: AppRepositor
         val visibleOrigin = if (request.manualOrigin.isNotBlank()) origin else if (previousRelevant && previous != null && selected.firstOrNull { it.id == previous.calendarId }?.showLocation != true && usableLocation(previous) != null) "" else origin
         val nextVisible = if (request.manualAfterDestination.isNotBlank()) request.manualAfterDestination else
             afterLocation?.takeIf { selected.firstOrNull { p -> p.id == next?.calendarId }?.showLocation == true }.orEmpty()
-        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin, nextVisible)
+        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin, nextVisible, selected.filter { it.travelCalendar }.mapTo(mutableSetOf()) { it.id })
     }
 }

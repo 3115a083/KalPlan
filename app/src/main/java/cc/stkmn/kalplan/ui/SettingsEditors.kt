@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -40,14 +42,45 @@ fun TextSetting(label: String, value: String, onValue: (String) -> Unit) {
 
 @Composable
 fun TimeRangeRow(from: String, until: String, onValue: (String, String) -> Unit) {
-    var start by remember(from) { mutableStateOf(from) }
-    var end by remember(until) { mutableStateOf(until) }
-    fun commit(a: String, b: String) { if (a.isBlank() && b.isBlank() || runCatching { LocalTime.parse(a); LocalTime.parse(b) }.isSuccess) onValue(a, b) }
+    var editing by rememberSaveable { mutableStateOf<String?>(null) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedTextField(start, { start = it.take(5); commit(start, end) }, label = { Text(tr("Von", "From")) }, placeholder = { Text("22:00") }, singleLine = true, modifier = Modifier.weight(1f))
-        OutlinedTextField(end, { end = it.take(5); commit(start, end) }, label = { Text(tr("Bis", "Until")) }, placeholder = { Text("06:00") }, singleLine = true, modifier = Modifier.weight(1f))
+        TimeChoiceButton(tr("Von", "From"), from.ifBlank { "22:00" }, from.isBlank(), Modifier.weight(1f)) { editing = "FROM" }
+        TimeChoiceButton(tr("Bis", "Until"), until.ifBlank { "06:00" }, until.isBlank(), Modifier.weight(1f)) { editing = "UNTIL" }
     }
-    if (start.isNotBlank() || end.isNotBlank()) TextButton(onClick = { start = ""; end = ""; onValue("", "") }) { Text(tr("Ruhezeit entfernen", "Remove quiet hours")) }
+    if (from.isNotBlank() || until.isNotBlank()) TextButton(onClick = { onValue("", "") }) { Text(tr("Ruhezeit entfernen", "Remove quiet hours")) }
+    editing?.let { target ->
+        val initial = runCatching { LocalTime.parse(if (target == "FROM") from.ifBlank { "22:00" } else until.ifBlank { "06:00" }) }.getOrDefault(if (target == "FROM") LocalTime.of(22, 0) else LocalTime.of(6, 0))
+        key(target, initial) {
+            ClockPickerDialog(initial, onDismiss = { editing = null }) { selected ->
+                val text = "%02d:%02d".format(selected.hour, selected.minute)
+                val nextFrom = if (target == "FROM") text else from.ifBlank { "22:00" }
+                val nextUntil = if (target == "UNTIL") text else until.ifBlank { "06:00" }
+                onValue(nextFrom, nextUntil)
+                editing = null
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeChoiceButton(label: String, value: String, placeholder: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, modifier = modifier.height(58.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+        Icon(Icons.Outlined.Schedule, null)
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.labelSmall)
+            Text(value, color = if (placeholder) MaterialTheme.colorScheme.onSurfaceVariant else LocalContentColor.current)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ClockPickerDialog(initial: LocalTime, onDismiss: () -> Unit, onSelect: (LocalTime) -> Unit) {
+    val picker = rememberTimePickerState(initialHour = initial.hour, initialMinute = initial.minute, is24Hour = true)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Uhrzeit auswählen", "Choose time")) }, text = {
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { TimePicker(picker) }
+    }, confirmButton = { TextButton(onClick = { onSelect(LocalTime.of(picker.hour, picker.minute)) }) { Text(tr("Übernehmen", "Apply")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }
 
 @Composable
@@ -117,19 +150,21 @@ fun LabelEditorDialog(existing: LabelPolicy?, global: ValueSettings, onDismiss: 
     var km by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.centsPerKm)) }
     var flat by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.flatCents)) }
     val validMoney = listOf(work, travel, km, flat).all { it.isBlank() || eurosToCents(it) != null }
-    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (terms.isNotEmpty() || sender.isNotBlank()) && (!durationEnabled || duration.toIntOrNull()?.let { it in 1..10080 } == true) && validMoney
+    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (!durationEnabled || duration.toIntOrNull()?.let { it in 1..10080 } == true) && validMoney
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) tr("Label erstellen", "Create label") else tr("Label bearbeiten", "Edit label")) }, text = {
         Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(name, { name = it.take(80) }, label = { Text(tr("Name", "Name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(color, { color = it.removePrefix("#").filter { c -> c.isDigit() || c.lowercaseChar() in 'a'..'f' }.take(6) }, label = { Text(tr("Farbe, z. B. 6750A4", "Color, e.g. 6750A4")) }, leadingIcon = { Box(Modifier.size(18.dp).background(runCatching { androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor("#$color")) }.getOrDefault(androidx.compose.ui.graphics.Color.Gray), RoundedCornerShape(5.dp))) }, singleLine = true)
+            Text(tr("Farbe", "Color"), style = MaterialTheme.typography.titleSmall)
+            LabelColorPicker(color) { color = it }
             Text(tr("Automatisch vergeben, wenn", "Assign automatically when"), style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(newTerm, { newTerm = it.take(100) }, label = { Text(tr("Wort oder Ausdruck", "Word or phrase")) }, singleLine = true, modifier = Modifier.weight(1f))
                 IconButton(enabled = newTerm.isNotBlank(), onClick = { terms = (terms + newTerm.trim()).distinct(); newTerm = "" }) { Icon(Icons.Outlined.Add, null) }
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) { terms.forEach { term -> InputChip(selected = true, onClick = { terms = terms - term }, label = { Text(term) }, trailingIcon = { Text("×") }) } }
-            ChoiceRow(listOf("ANY", "ALL"), mode) { mode = it }
-            ChoiceRow(listOf("SUBJECT_AND_BODY", "SUBJECT", "BODY"), searchIn) { searchIn = it }
+            if (terms.isEmpty() && sender.isBlank()) Text(tr("Ohne Muster wird das Label nur manuell vergeben.", "Without a pattern, the label is assigned manually only."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ChoiceRow(listOf("ANY", "ALL"), mode, label = { if (it == "ALL") tr("Alle Begriffe", "All terms") else tr("Ein Begriff", "Any term") }) { mode = it }
+            ChoiceRow(listOf("SUBJECT_AND_BODY", "SUBJECT", "BODY"), searchIn, label = { searchTargetName(it) }) { searchIn = it }
             OutlinedTextField(sender, { sender = it.take(320) }, label = { Text(tr("Optional: Absender enthält", "Optional: sender contains")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Text(tr("Sortiergewicht", "Sorting weight"), style = MaterialTheme.typography.titleSmall)
             Slider(score.toFloat(), { score = it.toInt() }, valueRange = -40f..40f, steps = 7)
@@ -142,7 +177,7 @@ fun LabelEditorDialog(existing: LabelPolicy?, global: ValueSettings, onDismiss: 
                 MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work, { work = it }, centsText(global.workCentsPerHour))
                 MoneyField(tr("Fahrtzeit pro Stunde", "Travel per hour"), travel, { travel = it }, centsText(global.travelCentsPerHour))
                 MoneyField(tr("Kilometerpauschale", "Per kilometer"), km, { km = it }, centsText(global.centsPerKm))
-                MoneyField(tr("Fahr- oder Auftragspauschale", "Travel or order flat fee"), flat, { flat = it }, centsText(global.flatCents))
+                MoneyField(tr("Pauschale pro Auftrag", "Flat fee per order"), flat, { flat = it }, centsText(global.flatCents))
             }
             if (onDelete != null) TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Outlined.Delete, null); Text(tr("Label löschen", "Delete label")) }
         }
@@ -178,7 +213,7 @@ fun AttachmentRuleDialog(existing: AttachmentRule?, onDismiss: () -> Unit, onSav
         OutlinedTextField(extension, { extension = it.removePrefix(".").take(20) }, label = { Text(tr("Dateiendung", "File extension")) }, singleLine = true)
         OutlinedTextField(name, { name = it.take(100) }, label = { Text(tr("Dateiname enthält", "Filename contains")) }, singleLine = true)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { OutlinedTextField(min, { min = it.filter(Char::isDigit).take(9) }, label = { Text(tr("Min. KB", "Min KB")) }, modifier = Modifier.weight(1f)); OutlinedTextField(max, { max = it.filter(Char::isDigit).take(9) }, label = { Text(tr("Max. KB", "Max KB")) }, modifier = Modifier.weight(1f)) }
-        ChoiceRow(listOf("ANY", "true", "false"), inline) { inline = it }
+        ChoiceRow(listOf("ANY", "true", "false"), inline, label = { when(it) { "true" -> tr("Eingebettet", "Inline"); "false" -> tr("Angehängt", "Attached"); else -> tr("Beides", "Either") } }) { inline = it }
     } }, confirmButton = { TextButton(onClick = { onSave(AttachmentRule(show, mime.trim(), extension.trim(), name.trim(), min.toIntOrNull()?.times(1024), max.toIntOrNull()?.times(1024), inline.toBooleanStrictOrNull())) }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }
 
@@ -208,7 +243,7 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
             Text(tr("Erkannte Felder", "Extracted fields"), style = MaterialTheme.typography.titleSmall)
             rules.forEach { rule ->
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(rule.sampleLabel ?: rule.key); Text(rule.semantic.name + " · " + rule.source.name + if (rule.required) " · " + tr("Pflicht", "required") else "", style = MaterialTheme.typography.bodySmall) }
+                    Column(Modifier.weight(1f)) { Text(rule.sampleLabel ?: rule.key); Text(semanticName(rule.semantic.name) + " · " + sourceName(rule.source.name) + if (rule.required) " · " + tr("Pflicht", "required") else "", style = MaterialTheme.typography.bodySmall) }
                     IconButton(onClick = { rules = rules.filterNot { it.id == rule.id } }) { Icon(Icons.Outlined.Delete, null) }
                 }
             }
@@ -217,8 +252,8 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
                     Text(tr("Feld hinzufügen", "Add field"), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
                     Text(tr("Trage die sichtbare Bezeichnung vor dem Wert ein, zum Beispiel „Termin“ oder „Ort“.", "Enter the visible label before the value, for example “Date” or “Location”."), style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(prefix, { prefix = it.take(100) }, label = { Text(tr("Bezeichnung in der Mail", "Label in the email")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic) { semantic = it }
-                    ChoiceRow(listOf("BODY", "SUBJECT"), source) { source = it }
+                    ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic, label = { semanticName(it) }) { semantic = it }
+                    ChoiceRow(listOf("BODY", "SUBJECT"), source, label = { sourceName(it) }) { source = it }
                     ToggleRow(tr("Pflichtfeld", "Required field"), required) { required = it }
                     OutlinedButton(enabled = prefix.isNotBlank(), onClick = {
                         val key = GuidedRuleFactory.sanitizeKey(prefix).ifBlank { "field_${rules.size + 1}" }
@@ -229,7 +264,7 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
                 }
             }
             OutlinedTextField(duration, { duration = it.filter(Char::isDigit).take(5) }, label = { Text(tr("Optionale Standarddauer, Minuten", "Optional default duration, minutes")) }, singleLine = true)
-            ChoiceRow(listOf("DE_DE", "EN_US"), locale) { locale = it }
+            ChoiceRow(listOf("DE_DE", "EN_US"), locale, label = { if (it == "EN_US") "English (US)" else "Deutsch (DE)" }) { locale = it }
             if (onDelete != null) TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Outlined.Delete, null); Text(tr("Profil löschen", "Delete profile")) }
         }
     }, confirmButton = { TextButton(enabled = valid, onClick = {
@@ -241,6 +276,28 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
         if (ProfileValidator().validate(saved).isEmpty()) onSave(saved)
     }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }
+
+@Composable
+private fun LabelColorPicker(selected: String, onSelect: (String) -> Unit) {
+    val colors = listOf("6750A4", "4F52C9", "006B62", "168A55", "3B7A57", "B26A00", "C2415B", "A33B20", "8055A5", "35618D", "5D6B78", "202124")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        colors.forEach { hex ->
+            val value = androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor("#$hex"))
+            Surface(modifier = Modifier.size(40.dp).clickable { onSelect(hex) }, shape = RoundedCornerShape(12.dp), color = value,
+                border = BorderStroke(if (selected.equals(hex, true)) 3.dp else 1.dp, if (selected.equals(hex, true)) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant)) {
+                if (selected.equals(hex, true)) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Check, tr("Ausgewählt", "Selected"), tint = androidx.compose.ui.graphics.Color.White) }
+            }
+        }
+    }
+}
+
+@Composable internal fun semanticName(value: String): String = when(value) {
+    "DATE" -> tr("Datum", "Date"); "TIME" -> tr("Beginn", "Start time"); "END_TIME" -> tr("Ende", "End time")
+    "DURATION" -> tr("Dauer", "Duration"); "LOCATION" -> tr("Ort", "Location"); "ONLINE_OR_LOCATION" -> tr("Online oder Ort", "Online or location")
+    else -> tr("Titel", "Title")
+}
+@Composable internal fun sourceName(value: String): String = if (value == "SUBJECT") tr("Betreff", "Subject") else tr("Mailtext", "Email body")
+@Composable private fun searchTargetName(value: String): String = when(value) { "SUBJECT" -> tr("Betreff", "Subject"); "BODY" -> tr("Mailtext", "Email body"); else -> tr("Betreff und Mailtext", "Subject and email body") }
 
 @Composable
 fun LicenseDialog(onDismiss: () -> Unit) {

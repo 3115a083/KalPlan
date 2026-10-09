@@ -8,8 +8,8 @@ import java.time.*
 class PlanningPolicyTest {
     @Test fun longerRequestReceivesSlightlyHigherBaseSortScore() {
         val settings = Settings(labels = listOf(LabelPolicy("Fiber", listOf("fiber"), score = -8, shortThresholdMinutes = 120, shortScore = -35)))
-        fun request(duration: Int) = StoredRequest("id", sender = "test@example.org", subject = "LWL", body = "", receivedMillis = 1000,
-            labels = listOf("LWL"), candidates = listOf(StoredCandidate(durationMinutes = duration)), selectedCandidate = 0)
+        fun request(duration: Int) = StoredRequest("id", sender = "test@example.org", subject = "Fiber", body = "", receivedMillis = 1000,
+            labels = listOf("Fiber"), candidates = listOf(StoredCandidate(durationMinutes = duration)), selectedCandidate = 0)
         assertTrue(PlanningPolicy.priority(request(60), settings, 1000).score < PlanningPolicy.priority(request(240), settings, 1000).score)
     }
     @Test fun labelValueOverrideOnlyReplacesConfiguredParts() {
@@ -22,6 +22,14 @@ class PlanningPolicyTest {
         assertEquals(42, selected.centsPerKm)
         assertEquals(2500, selected.flatCents)
     }
+    @Test fun highestWeightedMatchingLabelProvidesPriceOverride() {
+        val settings = Settings(value = ValueSettings(enabled = true, workCentsPerHour = 9300), labels = listOf(
+            LabelPolicy("General", score = 5, valueOverride = ValueOverride(workCentsPerHour = 9000)),
+            LabelPolicy("Special", score = 25, valueOverride = ValueOverride(workCentsPerHour = 8500))
+        ))
+        val request = StoredRequest("id", sender = "", subject = "", body = "", receivedMillis = 0, labels = listOf("General", "Special"))
+        assertEquals(8500, PlanningPolicy.valueSettings(request, settings).workCentsPerHour)
+    }
     @Test fun quietHoursCanCrossMidnight() {
         val settings = Settings(quietFrom = "22:00", quietUntil = "06:00")
         val zone = ZoneId.of("Europe/Berlin")
@@ -33,6 +41,9 @@ class PlanningPolicyTest {
         val rules = listOf(LabelPolicy("Exact", listOf("maintenance", "night"), keywordMode = "ALL", searchIn = "SUBJECT"))
         assertEquals(listOf("Exact"), PlanningPolicy.labels("x@example.org", "Night maintenance", "", rules))
         assertTrue(PlanningPolicy.labels("x@example.org", "Night", "maintenance", rules).isEmpty())
+    }
+    @Test fun labelWithoutPatternsRemainsManualOnly() {
+        assertTrue(PlanningPolicy.labels("x@example.org", "Anything", "Anything", listOf(LabelPolicy("Manual"))).isEmpty())
     }
     @Test fun fractionalWorkAndTravelRoundInCents() {
         val value = PlanningPolicy.value(StoredCandidate(durationMinutes = 61), 30, 10.0,

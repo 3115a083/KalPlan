@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -185,7 +187,7 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
 @Composable fun PriorityMark(score: Int) {
     val mark = when { score >= 80 -> "⇈"; score >= 65 -> "↑"; score >= 45 -> "—"; score >= 30 -> "↓"; else -> "⇊" }
     val description = when { score >= 80 -> tr("Deutlich erhöht", "Much higher"); score >= 65 -> tr("Erhöht", "Higher"); score >= 45 -> tr("Neutral", "Neutral"); score >= 30 -> tr("Niedriger", "Lower"); else -> tr("Deutlich niedriger", "Much lower") }
-    Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+    Surface(modifier = Modifier.semantics { contentDescription = description }, shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.primaryContainer) {
         Text(mark, modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
     }
 }

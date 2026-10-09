@@ -75,7 +75,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                         result.reasons.forEach { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium) }
                         Text(tr("Tagesübersicht", "Day context"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         if (result.events.isEmpty()) Text(tr("Keine ausgewählten Termine in diesem Zeitraum.", "No selected events in this period."))
-                        result.events.forEach { event -> CalendarContextEvent(event) }
+                        result.events.forEach { event -> CalendarContextEvent(event, event.calendarId in result.travelCalendarIds, request.candidate) }
                     }
                     if (state.settings.value.enabled && request.candidate != null) {
                         val value = PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, PlanningPolicy.valueSettings(request, state.settings))
@@ -183,11 +183,20 @@ private fun EditCandidateDialog(request: StoredRequest, policies: List<LabelPoli
 }
 
 @Composable
-private fun CalendarContextEvent(event: cc.stkmn.kalplan.domain.port.CalendarEventRef) {
+private fun CalendarContextEvent(event: cc.stkmn.kalplan.domain.port.CalendarEventRef, travel: Boolean, candidate: StoredCandidate?) {
     var expanded by rememberSaveable(event.id) { mutableStateOf(false) }
     val zone = ZoneId.systemDefault()
-    Card(onClick = { if (!event.description.isNullOrBlank()) expanded = !expanded }, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+    val candidateStart = candidate?.startMillis?.let(Instant::ofEpochMilli)
+    val candidateEnd = candidate?.endMillis?.let(Instant::ofEpochMilli)
+    val travelLabel = when {
+        !travel -> null
+        candidateStart != null && !event.end.isAfter(candidateStart) -> tr("Fahrt zum Termin", "Travel to appointment")
+        candidateEnd != null && !event.start.isBefore(candidateEnd) -> tr("Fahrt nach dem Termin", "Travel after appointment")
+        else -> tr("Fahrt", "Travel")
+    }
+    Card(onClick = { if (!event.description.isNullOrBlank()) expanded = !expanded }, colors = CardDefaults.cardColors(containerColor = if (travel) MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            travelLabel?.let { Text(it, color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelLarge) }
             Text(event.title ?: tr("Belegt, Details verborgen", "Busy, details hidden"), fontWeight = FontWeight.SemiBold)
             Text(event.start.atZone(zone).toLocalTime().toString() + " – " + event.end.atZone(zone).toLocalTime(), style = MaterialTheme.typography.labelMedium)
             event.location?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -323,8 +332,8 @@ private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismis
             Text(tr("Ordne erkannte Zeilen einem Feld zu. Regeln werden erst nach Speichern und Zuordnung zu einem Mailordner aktiv.", "Assign detected lines to a field. Rules become active after saving and assigning a mail folder."))
             candidates.forEachIndexed { i, c ->
                 Text("${c.label}: ${c.value.take(100)}", style = MaterialTheme.typography.bodySmall)
-                var semantic by remember(i) { mutableStateOf("CUSTOM") }
-                ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic) { semantic = it }
+                var semantic by remember(i) { mutableStateOf("DATE") }
+                ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic, label = { semanticName(it) }) { semantic = it }
                 TextButton(onClick = {
                     val r = GuidedRuleFactory.extractor(c, "field_$i", SemanticField.valueOf(semantic))
                     rules = rules.filterNot { it.key == r.key } + r

@@ -73,9 +73,9 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
         item {
             SettingsGroup(Icons.Outlined.Palette, tr("Design und Sprache", "Design and language"), tr("Farben, Hell/Dunkel und Sprache", "Colors, light/dark and language"), initiallyExpanded = true) {
                 Text(tr("Sprache", "Language"), style = MaterialTheme.typography.labelLarge)
-                ChoiceRow(listOf("SYSTEM", "DE", "EN"), state.settings.language) { updateSettings { s -> s.copy(language = it) } }
+                ChoiceRow(listOf("SYSTEM", "DE", "EN"), state.settings.language, label = { languageName(it) }) { updateSettings { s -> s.copy(language = it) } }
                 Text(tr("Helligkeit", "Brightness"), style = MaterialTheme.typography.labelLarge)
-                ChoiceRow(listOf("SYSTEM", "LIGHT", "DARK"), state.settings.themeMode) { updateSettings { s -> s.copy(themeMode = it) } }
+                ChoiceRow(listOf("SYSTEM", "LIGHT", "DARK"), state.settings.themeMode, label = { brightnessName(it) }) { updateSettings { s -> s.copy(themeMode = it) } }
                 Text(tr("Farbstil", "Color style"), style = MaterialTheme.typography.labelLarge)
                 ThemePicker(state.settings.theme) { selected -> updateSettings { it.copy(theme = selected) } }
             }
@@ -109,6 +109,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 ToggleRow(tr("Wert anzeigen", "Show value"), state.settings.value.enabled) { enabled -> updateSettings { it.copy(value = it.value.copy(enabled = enabled)) } }
                 if (state.settings.value.enabled) {
                     Text(valueSummary(state.settings.value))
+                    Text(tr("Bei mehreren passenden Labels gilt die Preisabweichung des Labels mit dem höchsten Sortiergewicht.", "If several labels match, the price override from the label with the highest sorting weight applies."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedButton(onClick = { valueOpen = true }) { Text(tr("Globalen Standard bearbeiten", "Edit global default")) }
                 }
             }
@@ -131,7 +132,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
         item {
             SettingsGroup(Icons.Outlined.Sync, tr("Synchronisierung", "Synchronization"), tr("Intervall, Ruhetage und tägliche Ruhezeit", "Interval, pause days and daily quiet hours")) {
                 Text(tr("Intervall", "Interval"), style = MaterialTheme.typography.labelLarge)
-                ChoiceRow(listOf("0", "5", "10", "15", "30", "60"), state.settings.syncMinutes.toString()) { value ->
+                ChoiceRow(listOf("0", "5", "10", "15", "30", "60"), state.settings.syncMinutes.toString(), label = { if (it == "0") tr("Manuell", "Manual") else "$it min" }) { value ->
                     val minutes = value.toInt(); updateSettings { it.copy(syncMinutes = minutes) }; SyncScheduler.configure(context, minutes)
                 }
                 Text(if (state.settings.syncMinutes == 0) tr("Nur manuell", "Manual only") else tr("Alle ${state.settings.syncMinutes} Minuten", "Every ${state.settings.syncMinutes} minutes"))
@@ -156,7 +157,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 NumberSetting(tr("Puffer danach", "Buffer after"), state.settings.afterBuffer, tr("Minuten", "minutes"), 0..1440) { value -> updateSettings { it.copy(afterBuffer = value) } }
                 TextSetting(tr("Standard-Ort", "Default place"), state.settings.originName) { value -> updateSettings { it.copy(originName = value) } }
                 TextSetting(tr("Adresse", "Address"), state.settings.originAddress) { value -> updateSettings { it.copy(originAddress = value) } }
-                ChoiceRow(listOf("IGNORE", "RELEVANT", "ALL"), state.settings.attachments) { value -> updateSettings { it.copy(attachments = value) } }
+                ChoiceRow(listOf("IGNORE", "RELEVANT", "ALL"), state.settings.attachments, label = { attachmentChoiceName(it) }) { value -> updateSettings { it.copy(attachments = value) } }
                 state.settings.attachmentRules.forEachIndexed { index, rule -> SettingItem(ruleSummary(rule), tr("Erste passende Regel gilt", "First matching rule wins"), onClick = { attachmentEdit = index to rule }) }
                 OutlinedButton(onClick = { newAttachment = true }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Anhangregel", "Attachment rule")) }
                 if (Build.VERSION.SDK_INT >= 33) OutlinedButton(onClick = { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text(tr("Benachrichtigungen erlauben", "Allow notifications")) }
@@ -238,6 +239,9 @@ private fun SettingsGroup(icon: androidx.compose.ui.graphics.vector.ImageVector,
 }
 
 @Composable private fun themeName(value: String): String = when(value) { "MATERIAL_YOU" -> "Material You"; "NEUTRAL_BUSINESS" -> tr("Neutral", "Neutral"); "TURQUOISE" -> tr("Türkis", "Turquoise"); "HIGH_CONTRAST" -> tr("Kontrast", "Contrast"); else -> "KalPlan" }
+@Composable private fun languageName(value: String): String = when(value) { "DE" -> "Deutsch"; "EN" -> "English"; else -> tr("Gerät", "Device") }
+@Composable private fun brightnessName(value: String): String = when(value) { "LIGHT" -> tr("Hell", "Light"); "DARK" -> tr("Dunkel", "Dark"); else -> tr("Gerät", "Device") }
+@Composable private fun attachmentChoiceName(value: String): String = when(value) { "IGNORE" -> tr("Keine", "None"); "ALL" -> tr("Alle", "All"); else -> tr("Relevante", "Relevant") }
 private fun parseColor(hex: String): Color = runCatching { Color(android.graphics.Color.parseColor("#${hex.removePrefix("#")}")) }.getOrDefault(Color(0xFF6750A4))
 private fun labelSummary(label: LabelPolicy): String = (label.keywords.joinToString().ifBlank { label.senderContains }).take(90)
 private fun valueSummary(v: ValueSettings): String = "${v.workCentsPerHour / 100.0} €/h · Fahrt ${v.travelCentsPerHour / 100.0} €/h · ${v.centsPerKm / 100.0} €/km · ${v.flatCents / 100.0} €"

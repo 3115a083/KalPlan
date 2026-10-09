@@ -41,9 +41,9 @@ import java.util.UUID
         Switch(checked = value, onCheckedChange = onChange)
     }
 }
-@Composable fun ChoiceRow(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+@Composable fun ChoiceRow(options: List<String>, selected: String, label: @Composable (String) -> String = { it }, onSelect: (String) -> Unit) {
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        options.forEach { item -> FilterChip(selected = selected == item, onClick = { onSelect(item) }, label = { Text(item) }) }
+        options.forEach { item -> FilterChip(selected = selected == item, onClick = { onSelect(item) }, label = { Text(label(item)) }) }
     }
 }
 @Composable private fun SectionTitle(text: String) { Text(text, style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp)) }
@@ -314,7 +314,7 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             EditField("SMTP Port", smtpPort) { smtpPort = it }
             ToggleRow("SMTP STARTTLS", outgoingStartTls) { outgoingStartTls = it }
             Text(tr("Ohne STARTTLS gilt implizites TLS. Zertifikate und Hostnamen werden immer geprüft.", "Without STARTTLS, implicit TLS is used. Certificates and hostnames are always verified."), style = MaterialTheme.typography.bodySmall)
-            ChoiceRow(listOf("PASSWORD", "XOAUTH2"), authMode) { authMode = it }
+            ChoiceRow(listOf("PASSWORD", "XOAUTH2"), authMode, label = { if (it == "XOAUTH2") "OAuth 2.0" else tr("Passwort", "Password") }) { authMode = it }
             if (authMode == "XOAUTH2") {
                 Text(tr("Erweiterte Einrichtung: Registriere KalPlan als nativen öffentlichen Client bei deinem Anbieter. Redirect: ", "Advanced setup: register KalPlan as a native public client with your provider. Redirect: ") + cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.REDIRECT)
                 EditField("Client-ID", clientId) { clientId = it }
@@ -348,7 +348,7 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             serverFolders.forEach { folder -> FilterChip(selected = folder in folders.lines(), onClick = { val current = folders.lines().filter { it.isNotBlank() }; folders = (if (folder in current) current - folder else current + folder).joinToString("\n") }, label = { Text(folder) }) }
             folders.lines().filter { it.isNotBlank() }.forEach { folder ->
                 Text(folder + " · " + tr("Profil", "Profile"), style = MaterialTheme.typography.labelLarge)
-                ChoiceRow(listOf("HEURISTIC") + state.profiles.map { it.id }, folderProfiles[folder] ?: "HEURISTIC") { p -> folderProfiles = if (p == "HEURISTIC") folderProfiles - folder else folderProfiles + (folder to p) }
+                ChoiceRow(listOf("HEURISTIC") + state.profiles.map { it.id }, folderProfiles[folder] ?: "HEURISTIC", label = { id -> if (id == "HEURISTIC") tr("Automatisch", "Automatic") else state.profiles.firstOrNull { it.id == id }?.name ?: tr("Unbekanntes Profil", "Unknown profile") }) { p -> folderProfiles = if (p == "HEURISTIC") folderProfiles - folder else folderProfiles + (folder to p) }
             }
             EditField(tr("Signatur", "Signature"), signature) { signature = it }
             Text(feedback, color = MaterialTheme.colorScheme.primary)

@@ -26,6 +26,7 @@ class AppSmokeTest {
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Testauftrag, erreichbar").fetchSemanticsNodes().isNotEmpty() }
         screenshot("list")
         compose.onNodeWithText("Testauftrag, erreichbar").performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Overview").fetchSemanticsNodes().isNotEmpty() }
         screenshot("detail")
         compose.onNodeWithText("Edit details").performScrollTo().performClick()
         compose.onNodeWithText("Date (MM/DD/YYYY)").performTextReplacement(java.time.LocalDate.now().plusDays(1).format(java.time.format.DateTimeFormatter.ofPattern("MM/dd/yyyy")))
@@ -42,6 +43,17 @@ class AppSmokeTest {
         compose.onNodeWithText("Settings").performClick()
         compose.onNodeWithText("Design and language").assertExists()
         screenshot("settings")
+        compose.onNodeWithText("Labels and sorting").performScrollTo().performClick()
+        compose.onNodeWithText("Label", useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNodeWithText("Assign automatically when").assertExists()
+        compose.onNodeWithText("Color, e.g. 6750A4").assertDoesNotExist()
+        screenshot("label-editor")
+        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithText("Synchronization").performScrollTo().performClick()
+        compose.onNodeWithText("From").performScrollTo().performClick()
+        compose.onNodeWithText("Choose time").assertExists()
+        screenshot("quiet-time-picker")
+        compose.onNodeWithText("Cancel").performClick()
     }
     private fun screenshot(name: String) {
         compose.waitForIdle()

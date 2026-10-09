@@ -1,5 +1,7 @@
 package cc.stkmn.kalplan.ui
 
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
@@ -24,6 +26,7 @@ import cc.stkmn.kalplan.infrastructure.calendar.AndroidCalendarReader
 import androidx.compose.ui.platform.LocalContext
 import java.time.*
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.launch
 
 @Composable
 fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, onOpen: (String) -> Unit) {
@@ -127,21 +130,30 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
             Button(onClick = { visited = emptyList() }) { Text(tr("Erneut ansehen", "Review again")) }
         } else {
             var drag by remember(request.id) { mutableStateOf(0f) }
-            val threshold = 180f
+            val scope = rememberCoroutineScope()
+            val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 150.dp.toPx() }
+            fun springBack() { val start = drag; scope.launch { animate(start, 0f, animationSpec = tween(220)) { value, _ -> drag = value } } }
+            val progress = (kotlin.math.abs(drag) / threshold).coerceIn(0f, 1f)
             Box(Modifier.weight(1f).fillMaxWidth().pointerInput(request.id) {
-                detectHorizontalDragGestures(onHorizontalDrag = { change, amount -> change.consume(); drag += amount }, onDragCancel = { drag = 0f }, onDragEnd = {
+                detectHorizontalDragGestures(onHorizontalDrag = { change, amount -> change.consume(); drag = (drag + amount).coerceIn(-size.width * 0.8f, size.width * 0.8f) }, onDragCancel = { springBack() }, onDragEnd = {
                     if (drag > threshold) onAction(request.id, "accept")
                     else if (drag < -threshold) { onLater(request.id); visited = visited + request.id }
-                    drag = 0f
+                    else springBack()
                 })
             }, contentAlignment = Alignment.Center) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(tr("Später", "Later"), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                    Text(tr("Prüfen", "Review"), color = Color(0xFF168A55), fontWeight = FontWeight.Bold)
+                    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = if (drag < 0) 0.45f + progress * 0.5f else 0.18f)) {
+                        Text("← " + tr("Später", "Later"), Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
+                    }
+                    Surface(shape = RoundedCornerShape(16.dp), color = Color(0xFFB9F3D2).copy(alpha = if (drag > 0) 0.45f + progress * 0.5f else 0.18f)) {
+                        Text(tr("Prüfen", "Review") + " →", Modifier.padding(12.dp), color = Color(0xFF075C39), fontWeight = FontWeight.Bold)
+                    }
                 }
-                Column(Modifier.fillMaxWidth().graphicsLayer { translationX = drag; rotationZ = drag / 90f }, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    RequestCard(request, state.settings, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
-                    Text(when { drag > 40 -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -40 -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.fillMaxWidth().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
+                        RequestCard(request, state.settings, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
+                    }
+                    Text(when { drag > threshold * 0.25f -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -threshold * 0.25f -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
