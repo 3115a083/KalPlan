@@ -51,14 +51,8 @@ class AppSmokeTest {
         screenshot("label-editor")
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("Labels and sorting").performClick()
-        var syncVisible = false
-        repeat(6) {
-            if (!syncVisible) {
-                syncVisible = compose.onAllNodesWithText("Synchronization").fetchSemanticsNodes().isNotEmpty()
-                if (!syncVisible) compose.onRoot().performTouchInput { swipeUp() }
-            }
-        }
-        compose.onNodeWithText("Synchronization").performScrollTo().performClick()
+        compose.onNode(hasScrollAction()).performScrollToIndex(6)
+        compose.onNodeWithText("Synchronization").performClick()
         compose.onNodeWithText("From").performScrollTo().performClick()
         compose.onNodeWithText("Choose time").assertExists()
         screenshot("quiet-time-picker")
@@ -67,6 +61,8 @@ class AppSmokeTest {
     private fun screenshot(name: String) {
         compose.waitForIdle()
         val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.waitForIdleSync()
+        Thread.sleep(250)
         val directory = File(instrumentation.targetContext.getExternalFilesDir(null), "screenshots").apply { mkdirs() }
         val bitmap = instrumentation.uiAutomation.takeScreenshot()
         File(directory, "$name.png").outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
