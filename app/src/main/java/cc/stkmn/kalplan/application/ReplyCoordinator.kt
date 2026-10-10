@@ -47,7 +47,7 @@ class ReplyCoordinator(private val context: Context, private val repository: App
             account.signatureAssets.map { asset ->
                 val uri = android.net.Uri.parse(asset.uri)
                 require(uri.scheme == "content") { "Only document-provider signature files are allowed" }
-                val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readNBytes(10_000_001) }
+                val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readBounded(10_000_000) }
                 require(bytes.size <= 10_000_000 && total + bytes.size <= 20_000_000) { "Signature attachments exceed size limit" }
                 total += bytes.size
                 asset to bytes
@@ -148,3 +148,17 @@ class ReplyCoordinator(private val context: Context, private val repository: App
 
 private fun escapeHtml(value: String): String = value.take(100_000)
     .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+private fun java.io.InputStream.readBounded(maxBytes: Int): ByteArray {
+    val output = java.io.ByteArrayOutputStream(minOf(maxBytes, 64 * 1024))
+    val buffer = ByteArray(8192)
+    var total = 0
+    while (true) {
+        val count = read(buffer)
+        if (count < 0) break
+        total += count
+        require(total <= maxBytes) { "Signature attachment exceeds size limit" }
+        output.write(buffer, 0, count)
+    }
+    return output.toByteArray()
+}

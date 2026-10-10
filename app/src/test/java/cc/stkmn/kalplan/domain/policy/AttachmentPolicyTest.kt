@@ -17,4 +17,11 @@ class AttachmentPolicyTest {
         assertTrue(AttachmentPolicy.visible(file, Settings(attachments = "ALL", attachmentRules = listOf(rule))))
         assertFalse(AttachmentPolicy.visible(file, Settings(attachments = "IGNORE")))
     }
+    @Test fun oneRuleCanMatchMultipleMimeFormats() {
+        val rule = AttachmentRule(show = false, mimePrefixes = listOf("image/jpeg", "image/png"))
+        val settings = Settings(attachmentRules = listOf(rule))
+        assertFalse(AttachmentPolicy.visible(StoredAttachment("photo.jpg", "image/jpeg", 500_000, false), settings))
+        assertFalse(AttachmentPolicy.visible(StoredAttachment("scan.png", "image/png", 500_000, false), settings))
+        assertTrue(AttachmentPolicy.visible(StoredAttachment("terms.pdf", "application/pdf", 500_000, false), settings))
+    }
 }

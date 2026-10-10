@@ -51,6 +51,20 @@ class PlanningPolicyTest {
         assertEquals(75, value.billedMinutes)
         assertEquals(10420L, value.totalCents)
     }
+    @Test fun billingCanRoundUpNearestOrDown() {
+        val candidate = StoredCandidate(durationMinutes = 61)
+        fun billed(mode: String) = PlanningPolicy.value(candidate, null, null, ValueSettings(billingStepMinutes = 15, roundingMode = mode)).billedMinutes
+        assertEquals(75, billed("UP"))
+        assertEquals(60, billed("NEAREST"))
+        assertEquals(60, billed("DOWN"))
+    }
+    @Test fun selectedFlatFeePresetIsMaterializedWithoutDuplicatingLabelValues() {
+        val preset = FlatFeePreset("regional", "Regional", flatCents = 1200, distanceBands = listOf(DistanceBand(25.0, 5700)))
+        val settings = Settings(value = ValueSettings(flatFeePresetId = preset.id), flatFeePresets = listOf(preset))
+        val selected = PlanningPolicy.valueSettings(StoredRequest("id", sender = "", subject = "", body = "", receivedMillis = 0), settings)
+        assertEquals(1200, selected.flatCents)
+        assertEquals(listOf(DistanceBand(25.0, 5700)), selected.distanceBands)
+    }
     @Test fun weekendAndVacationPause() {
         val saturday = ZonedDateTime.of(2026, 10, 10, 12, 0, 0, 0, ZoneId.of("Europe/Berlin"))
         assertTrue(PlanningPolicy.syncPaused(Settings(pauseWeekends = true), saturday))

@@ -126,6 +126,11 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                         "SWIPE" -> SwipeScreen(state, planner, onOpen = { selected = it }, onAction = { id, action -> selected = id; replyAction = action },
                             onLater = { id -> run { repository.request(id) { it.copy(status = "LATER") } } }, onUnclear = { id -> run { repository.request(id) { it.copy(status = "UNCLEAR", unclear = true) } } }, onClose = { section = "REQUESTS" })
                         else -> {
+                            Box(Modifier.padding(horizontal = 16.dp)) {
+                                ChoiceRow(listOf("OPEN", "HISTORY", "SWIPE"), if (showHistory) "HISTORY" else "OPEN", label = { when (it) { "HISTORY" -> tr("Verlauf", "History"); "SWIPE" -> tr("Swipe", "Swipe"); else -> tr("Liste", "List") } }) { choice ->
+                                    when (choice) { "HISTORY" -> showHistory = true; "SWIPE" -> section = "SWIPE"; else -> showHistory = false }
+                                }
+                            }
                             OutlinedTextField(search, { search = it }, label = { Text(tr("Suchen", "Search")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true)
                             val requests = state.requests.filter {
                                 (if (showHistory) !it.pending else it.pending) && (section != "UNCLEAR" || it.unclear) &&
