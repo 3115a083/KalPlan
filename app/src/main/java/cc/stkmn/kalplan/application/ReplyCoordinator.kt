@@ -8,8 +8,12 @@ import cc.stkmn.kalplan.infrastructure.reply.ReplyPolicy
 import cc.stkmn.kalplan.infrastructure.calendar.AndroidReservationWriter
 import cc.stkmn.kalplan.infrastructure.widget.RequestSurfaces
 import jakarta.mail.Message
+import jakarta.activation.DataHandler
 import jakarta.mail.internet.InternetAddress
+import jakarta.mail.internet.MimeBodyPart
 import jakarta.mail.internet.MimeMessage
+import jakarta.mail.internet.MimeMultipart
+import jakarta.mail.util.ByteArrayDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -30,6 +34,7 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         val recipient = ReplyPolicy.recipient(request, settings)
         require(recipient == expectedRecipient) { "Recipient changed. Review again." }
         val account = repository.data.value.accounts.first { it.id == request.accountId && it.enabled }
+        require(account.smtpEnabled && account.smtpHost.isNotBlank()) { "SMTP is not enabled for this account" }
         val providers = AccountProviders(repository)
         // Reload source to defend against stale UIDVALIDITY and changed Reply-To/header provenance.
         val source = AngusMailReader(providers, providers).loadMessage(MailFolderRef(account.id, request.folder), request.sourceStableId ?: request.id)
@@ -37,11 +42,42 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         if (!settings.debug) require(ReplyPolicy.address(source.envelope.replyTo ?: source.envelope.sender) == recipient)
         val credential = if (account.authMode == "XOAUTH2") cc.stkmn.kalplan.infrastructure.oauth.OAuthAccess.accessToken(context, repository, account.id) else repository.secret(account.id, true)
         val session = AngusSessionFactory.smtp(account.runtime().outgoing)
+        val signatureAssets = withContext(Dispatchers.IO) {
+            var total = 0
+            account.signatureAssets.map { asset ->
+                val uri = android.net.Uri.parse(asset.uri)
+                require(uri.scheme == "content") { "Only document-provider signature files are allowed" }
+                val bytes = requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readNBytes(10_000_001) }
+                require(bytes.size <= 10_000_000 && total + bytes.size <= 20_000_000) { "Signature attachments exceed size limit" }
+                total += bytes.size
+                asset to bytes
+            }
+        }
         val message = MimeMessage(session).apply {
             setFrom(InternetAddress(ReplyPolicy.address(account.address)))
             setRecipient(Message.RecipientType.TO, InternetAddress(recipient))
             setSubject(ReplyPolicy.header((if (settings.debug) "[KalPlan TEST] " else "") + "Re: " + request.subject.take(700)), "UTF-8")
-            setText(body + if (account.signature.isNotBlank()) "\n\n" + account.signature else "", "UTF-8")
+            val mixed = MimeMultipart("mixed")
+            if (account.signatureMode == "HTML") {
+                val related = MimeMultipart("related")
+                val inlineAssets = signatureAssets.filter { it.first.inline && it.first.mime.startsWith("image/") }
+                val htmlImages = inlineAssets.mapIndexed { index, _ -> "<img src=\"cid:kalplan-signature-$index\" alt=\"\"/>" }.joinToString("<br>")
+                val html = "<div style=\"white-space:pre-wrap\">${escapeHtml(body)}</div><br>" + account.signatureHtml.take(100_000) + htmlImages
+                related.addBodyPart(MimeBodyPart().apply { setContent(html, "text/html; charset=UTF-8") })
+                inlineAssets.forEachIndexed { index, (asset, bytes) ->
+                    related.addBodyPart(MimeBodyPart().apply {
+                        dataHandler = DataHandler(ByteArrayDataSource(bytes, asset.mime)); fileName = asset.name
+                        disposition = jakarta.mail.Part.INLINE; setHeader("Content-ID", "<kalplan-signature-$index>")
+                    })
+                }
+                mixed.addBodyPart(MimeBodyPart().apply { setContent(related) })
+            } else {
+                mixed.addBodyPart(MimeBodyPart().apply { setText(body + if (account.signature.isNotBlank()) "\n\n" + account.signature else "", "UTF-8") })
+            }
+            signatureAssets.filterNot { it.first.inline && it.first.mime.startsWith("image/") && account.signatureMode == "HTML" }.forEach { (asset, bytes) ->
+                mixed.addBodyPart(MimeBodyPart().apply { dataHandler = DataHandler(ByteArrayDataSource(bytes, asset.mime)); fileName = asset.name; disposition = jakarta.mail.Part.ATTACHMENT })
+            }
+            setContent(mixed)
             sentDate = Date()
             ReplyPolicy.messageId(request.messageId)?.let { setHeader("In-Reply-To", it); setHeader("References", it) }
             saveChanges()
@@ -109,3 +145,6 @@ class ReplyCoordinator(private val context: Context, private val repository: App
         "reply_sent"
     }
 }
+
+private fun escapeHtml(value: String): String = value.take(100_000)
+    .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")

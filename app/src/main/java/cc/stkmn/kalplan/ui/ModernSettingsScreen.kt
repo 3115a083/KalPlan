@@ -40,7 +40,7 @@ import java.time.LocalTime
 import java.util.UUID
 
 @Composable
-fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit) {
+fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onRun: (suspend () -> Unit) -> Unit, focusMail: Boolean = false) {
     val context = LocalContext.current
     var accountEdit by remember { mutableStateOf<MailAccount?>(null) }
     var newAccount by remember { mutableStateOf(false) }
@@ -49,10 +49,13 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     var profileEdit by remember { mutableStateOf<ExtractionProfile?>(null) }
     var newProfile by remember { mutableStateOf(false) }
     var valueOpen by remember { mutableStateOf(false) }
+    var presetEdit by remember { mutableStateOf<FlatFeePreset?>(null) }
+    var newPreset by remember { mutableStateOf(false) }
     var calendarEdit by remember { mutableStateOf<Pair<CalendarRef, CalendarPrivacy>?>(null) }
     var attachmentEdit by remember { mutableStateOf<Pair<Int, AttachmentRule>?>(null) }
     var newAttachment by remember { mutableStateOf(false) }
     var noticesOpen by remember { mutableStateOf(false) }
+    var routingOpen by remember { mutableStateOf(false) }
     var debugOpen by rememberSaveable { mutableStateOf(false) }
     var taps by remember { mutableIntStateOf(0) }
     var lastTap by remember { mutableLongStateOf(0L) }
@@ -68,10 +71,9 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text(tr("Einstellungen", "Settings"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(tr("Änderungen werden sofort angewendet.", "Changes apply immediately."), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
-            SettingsGroup(Icons.Outlined.Palette, tr("Design und Sprache", "Design and language"), tr("Farben, Hell/Dunkel und Sprache", "Colors, light/dark and language"), initiallyExpanded = true) {
+            SettingsGroup(Icons.Outlined.Palette, tr("Design und Sprache", "Design and language"), tr("Farben, Hell/Dunkel und Sprache", "Colors, light/dark and language"), initiallyExpanded = !focusMail) {
                 Text(tr("Sprache", "Language"), style = MaterialTheme.typography.labelLarge)
                 ChoiceRow(listOf("SYSTEM", "DE", "EN"), state.settings.language, label = { languageName(it) }) { updateSettings { s -> s.copy(language = it) } }
                 Text(tr("Helligkeit", "Brightness"), style = MaterialTheme.typography.labelLarge)
@@ -81,7 +83,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             }
         }
         item {
-            SettingsGroup(Icons.Outlined.AlternateEmail, tr("Mailkonten und Profile", "Mail accounts and profiles"), tr("Eingang, Ordner und automatische Erkennung", "Inbox, folders and automatic extraction")) {
+            SettingsGroup(Icons.Outlined.AlternateEmail, tr("Mailkonten und Profile", "Mail accounts and profiles"), tr("Eingang, Ordner und automatische Erkennung", "Inbox, folders and automatic extraction"), initiallyExpanded = focusMail) {
                 state.accounts.forEach { account ->
                     SettingItem(account.name, account.address + " · " + account.folders.joinToString(), onClick = { accountEdit = account })
                 }
@@ -111,6 +113,12 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                     Text(valueSummary(state.settings.value))
                     Text(tr("Bei mehreren passenden Labels gilt die Preisabweichung des Labels mit dem höchsten Sortiergewicht.", "If several labels match, the price override from the label with the highest sorting weight applies."), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     OutlinedButton(onClick = { valueOpen = true }) { Text(tr("Globalen Standard bearbeiten", "Edit global default")) }
+                    HorizontalDivider()
+                    Text(tr("Gespeicherte Pauschalen", "Saved flat fees"), style = MaterialTheme.typography.titleSmall)
+                    state.settings.flatFeePresets.forEach { preset ->
+                        SettingItem(preset.name, flatFeeSummary(preset), onClick = { presetEdit = preset })
+                    }
+                    OutlinedButton(onClick = { newPreset = true }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Pauschale", "Flat fee")) }
                 }
             }
         }
@@ -124,6 +132,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                             if (checked) calendarEdit = calendar to privacy.copy(included = true, showTitle = true, showLocation = true, showDescription = true)
                             else onRun { repository.update { data -> data.copy(calendars = data.calendars.filterNot { it.id == calendar.id } + privacy.copy(included = false)) } }
                         })
+                        Spacer(Modifier.width(16.dp))
                         SettingItem(calendar.displayName, calendarSummary(privacy), Modifier.weight(1f), enabled = privacy.included, onClick = { calendarEdit = calendar to privacy })
                     }
                 }
@@ -157,6 +166,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 NumberSetting(tr("Puffer danach", "Buffer after"), state.settings.afterBuffer, tr("Minuten", "minutes"), 0..1440) { value -> updateSettings { it.copy(afterBuffer = value) } }
                 TextSetting(tr("Standard-Ort", "Default place"), state.settings.originName) { value -> updateSettings { it.copy(originName = value) } }
                 TextSetting(tr("Adresse", "Address"), state.settings.originAddress) { value -> updateSettings { it.copy(originAddress = value) } }
+                SettingItem(tr("Fahrtsuche-API", "Routing API"), state.settings.routingProvider + " · " + tr("Limit", "limit") + " ${state.settings.routingDailyLimit}/Tag", onClick = { routingOpen = true })
                 ChoiceRow(listOf("IGNORE", "RELEVANT", "ALL"), state.settings.attachments, label = { attachmentChoiceName(it) }) { value -> updateSettings { it.copy(attachments = value) } }
                 state.settings.attachmentRules.forEachIndexed { index, rule -> SettingItem(ruleSummary(rule), tr("Erste passende Regel gilt", "First matching rule wins"), onClick = { attachmentEdit = index to rule }) }
                 OutlinedButton(onClick = { newAttachment = true }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Anhangregel", "Attachment rule")) }
@@ -173,7 +183,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 Row(horizontalArrangement = Arrangement.Center) {
                     TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/3115a083/KalPlan"))) }) { Text("GitHub") }
                     TextButton(onClick = { noticesOpen = true }) { Text(tr("Lizenzen", "Licenses")) }
-                    TextButton(enabled = !busy, onClick = { onRun { feedback = withContext(Dispatchers.IO) { BoundedHttps.json("https://api.github.com/repos/3115a083/KalPlan/releases/latest").getString("tag_name").take(40) } } }) { Text(tr("Update prüfen", "Check update")) }
+                    TextButton(enabled = !busy, onClick = { onRun { feedback = withContext(Dispatchers.IO) { runCatching { BoundedHttps.json("https://api.github.com/repos/3115a083/KalPlan/releases/latest").getString("tag_name").take(40) }.getOrElse { "Noch keine veröffentlichte Version / No published release yet" } } } }) { Text(tr("Update prüfen", "Check update")) }
                 }
                 if (feedback.isNotBlank()) Text(feedback, style = MaterialTheme.typography.bodySmall)
             }
@@ -188,13 +198,16 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     }
 
     if (newAccount || accountEdit != null) AccountDialog(accountEdit, state, repository, busy, onRun) { newAccount = false; accountEdit = null }
-    if (newLabel || labelEdit != null) LabelEditorDialog(labelEdit, state.settings.value, onDismiss = { newLabel = false; labelEdit = null }, onSave = { saved ->
+    if (newLabel || labelEdit != null) LabelEditorDialog(labelEdit, state.settings.value, state.settings.flatFeePresets, onDismiss = { newLabel = false; labelEdit = null }, onSave = { saved ->
         updateSettings { s -> s.copy(labels = s.labels.filterNot { it.name == labelEdit?.name } + saved) }; newLabel = false; labelEdit = null
     }, onDelete = labelEdit?.let { old -> { updateSettings { s -> s.copy(labels = s.labels.filterNot { it.name == old.name }) }; labelEdit = null } })
     if (newProfile || profileEdit != null) ProfileEditorDialog(profileEdit, onDismiss = { newProfile = false; profileEdit = null }, onSave = { saved ->
         onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == saved.id } + saved) } }; newProfile = false; profileEdit = null
     }, onDelete = profileEdit?.let { old -> { onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == old.id }) } }; profileEdit = null } })
-    if (valueOpen) ValueEditorDialog(state.settings.value, onDismiss = { valueOpen = false }) { value -> updateSettings { it.copy(value = value) }; valueOpen = false }
+    if (valueOpen) ValueEditorDialog(state.settings.value, state.settings.flatFeePresets, onDismiss = { valueOpen = false }) { value -> updateSettings { it.copy(value = value) }; valueOpen = false }
+    if (newPreset || presetEdit != null) FlatFeePresetDialog(presetEdit, onDismiss = { newPreset = false; presetEdit = null }, onSave = { saved ->
+        updateSettings { it.copy(flatFeePresets = it.flatFeePresets.filterNot { old -> old.id == saved.id } + saved) }; newPreset = false; presetEdit = null
+    }, onDelete = presetEdit?.let { old -> { updateSettings { s -> s.copy(flatFeePresets = s.flatFeePresets.filterNot { it.id == old.id }, value = if (s.value.flatFeePresetId == old.id) s.value.copy(flatFeePresetId = "") else s.value, labels = s.labels.map { label -> if (label.valueOverride?.flatFeePresetId == old.id) label.copy(valueOverride = label.valueOverride.copy(flatFeePresetId = "")) else label }) }; presetEdit = null } })
     calendarEdit?.let { (calendar, privacy) -> CalendarOptionsDialog(calendar, privacy, state.settings.reservationCalendarId, onDismiss = { calendarEdit = null }) { saved, reservation ->
         onRun { repository.update { it.copy(calendars = it.calendars.filterNot { p -> p.id == saved.id } + saved, settings = it.settings.copy(reservationCalendarId = if (reservation) saved.id else if (it.settings.reservationCalendarId == saved.id) "" else it.settings.reservationCalendarId)) } }; calendarEdit = null
     } }
@@ -202,6 +215,13 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
         updateSettings { s -> val rules = s.attachmentRules.toMutableList(); val i = attachmentEdit?.first; if (i == null) rules += saved else rules[i] = saved; s.copy(attachmentRules = rules.take(100)) }; newAttachment = false; attachmentEdit = null
     }
     if (noticesOpen) LicenseDialog { noticesOpen = false }
+    if (routingOpen) RoutingSettingsDialog(state.settings.routingProvider, state.settings.routingDailyLimit, onDismiss = { routingOpen = false }) { provider, limit, key ->
+        onRun {
+            repository.update { it.copy(settings = it.settings.copy(routingProvider = provider, routingDailyLimit = limit)) }
+            if (key.isNotBlank()) repository.saveRoutingKey(provider, key)
+        }
+        routingOpen = false
+    }
 }
 
 @Composable
@@ -245,6 +265,10 @@ private fun SettingsGroup(icon: androidx.compose.ui.graphics.vector.ImageVector,
 private fun parseColor(hex: String): Color = runCatching { Color(android.graphics.Color.parseColor("#${hex.removePrefix("#")}")) }.getOrDefault(Color(0xFF6750A4))
 private fun labelSummary(label: LabelPolicy): String = (label.keywords.joinToString().ifBlank { label.senderContains }).take(90)
 private fun valueSummary(v: ValueSettings): String = "${v.workCentsPerHour / 100.0} €/h · Fahrt ${v.travelCentsPerHour / 100.0} €/h · ${v.centsPerKm / 100.0} €/km · ${v.flatCents / 100.0} €"
+private fun flatFeeSummary(v: FlatFeePreset): String = buildList {
+    if (v.flatCents > 0) add("${v.flatCents / 100.0} € pro Auftrag")
+    v.distanceBands.sortedBy { it.upToKm }.forEach { add("bis ${it.upToKm.toInt()} km: ${it.cents / 100.0} €") }
+}.joinToString(" · ")
 @Composable private fun calendarSummary(p: CalendarPrivacy): String = if (!p.included) tr("Aus", "Off") else listOfNotNull(if (p.showTitle) tr("Titel", "title") else null, if (p.showLocation) tr("Ort", "location") else null, if (p.showDescription) tr("Beschreibung", "description") else null, if (p.travelCalendar) tr("Fahrten", "travel") else null).joinToString(" · ")
-@Composable private fun ruleSummary(r: AttachmentRule): String = (if (r.show) tr("Zeigen", "Show") else tr("Ausblenden", "Hide")) + " · " + listOf(r.mimePrefix, r.extension, r.nameContains).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { tr("alle passenden Dateien", "all matching files") }
+@Composable private fun ruleSummary(r: AttachmentRule): String = (if (r.show) tr("Zeigen", "Show") else tr("Ausblenden", "Hide")) + " · " + (r.mimePrefixes + r.extensions.map { ".$it" } + listOf(r.mimePrefix, r.extension, r.nameContains)).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { tr("alle passenden Dateien", "all matching files") }
 

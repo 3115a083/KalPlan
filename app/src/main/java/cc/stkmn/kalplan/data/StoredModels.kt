@@ -15,8 +15,12 @@ data class MailAccount(
     val smtpHost: String,
     val smtpPort: Int = 465,
     val smtpStartTls: Boolean = false,
+    val smtpEnabled: Boolean = true,
     val folders: List<String> = listOf("INBOX"),
     val signature: String = "",
+    val signatureHtml: String = "",
+    val signatureMode: String = "TEXT",
+    val signatureAssets: List<SignatureAsset> = emptyList(),
     val enabled: Boolean = true,
     val folderProfiles: Map<String, String> = emptyMap(),
     val authMode: String = "PASSWORD",
@@ -27,6 +31,14 @@ data class MailAccount(
 )
 
 @Serializable
+data class SignatureAsset(
+    val uri: String,
+    val name: String,
+    val mime: String,
+    val inline: Boolean = false
+)
+
+@Serializable
 data class CalendarPrivacy(
     val id: String,
     val included: Boolean = false,
@@ -34,7 +46,8 @@ data class CalendarPrivacy(
     val showLocation: Boolean = false,
     val showDescription: Boolean = false,
     val useHiddenLocationForRouting: Boolean = false,
-    val travelCalendar: Boolean = false
+    val travelCalendar: Boolean = false,
+    val travelTitleContains: String = ""
 )
 
 @Serializable
@@ -43,8 +56,10 @@ data class ValueOverride(
     val travelCentsPerHour: Long? = null,
     val centsPerKm: Long? = null,
     val flatCents: Long? = null,
+    val flatFeePresetId: String? = null,
     val billingStepMinutes: Int? = null,
     val roundUp: Boolean? = null,
+    val roundingMode: String? = null,
     val roundTrip: Boolean? = null
 )
 
@@ -75,11 +90,21 @@ data class ValueSettings(
     val travelCentsPerHour: Long = 0,
     val centsPerKm: Long = 42,
     val flatCents: Long = 0,
+    val flatFeePresetId: String = "",
     val roundTrip: Boolean = false,
-    val distanceBands: List<DistanceBand> = emptyList()
+    val distanceBands: List<DistanceBand> = emptyList(),
+    val roundingMode: String = "UP"
 )
 @Serializable
 data class DistanceBand(val upToKm: Double, val cents: Long)
+
+@Serializable
+data class FlatFeePreset(
+    val id: String,
+    val name: String,
+    val flatCents: Long = 0,
+    val distanceBands: List<DistanceBand> = emptyList()
+)
 
 @Serializable
 data class Settings(
@@ -111,12 +136,14 @@ data class Settings(
     val reservationExcerpts: List<String> = emptyList(),
     val attachments: String = "RELEVANT",
     val attachmentRules: List<AttachmentRule> = emptyList(),
+    val showInlineMailImages: Boolean = false,
     val routingProvider: String = "GOOGLE_MAPS",
     val routingDailyLimit: Int = 10,
     val debug: Boolean = false,
     val debugTestAddress: String = "",
     val debugSendToTest: Boolean = false,
     val value: ValueSettings = ValueSettings(),
+    val flatFeePresets: List<FlatFeePreset> = emptyList(),
     val labels: List<LabelPolicy> = emptyList()
 )
 

@@ -278,20 +278,35 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
     var smtp by rememberSaveable { mutableStateOf(existing?.smtpHost.orEmpty()) }
     var imapPort by rememberSaveable { mutableStateOf((existing?.imapPort ?: 993).toString()) }
     var smtpPort by rememberSaveable { mutableStateOf((existing?.smtpPort ?: 465).toString()) }
+    var smtpEnabled by rememberSaveable { mutableStateOf(existing?.smtpEnabled ?: false) }
     var incomingStartTls by rememberSaveable { mutableStateOf(existing?.imapStartTls ?: false) }
     var outgoingStartTls by rememberSaveable { mutableStateOf(existing?.smtpStartTls ?: false) }
     var password by remember { mutableStateOf("") }
     var outgoingPassword by remember { mutableStateOf("") }
     var folders by rememberSaveable { mutableStateOf(existing?.folders?.joinToString("\n") ?: "INBOX") }
     var signature by rememberSaveable { mutableStateOf(existing?.signature.orEmpty()) }
+    var signatureHtml by rememberSaveable { mutableStateOf(existing?.signatureHtml.orEmpty()) }
+    var signatureMode by rememberSaveable { mutableStateOf(existing?.signatureMode ?: "TEXT") }
+    var signatureAssets by remember { mutableStateOf(existing?.signatureAssets.orEmpty()) }
     var folderProfiles by remember { mutableStateOf(existing?.folderProfiles ?: emptyMap()) }
     var feedback by remember { mutableStateOf("") }
     var serverFolders by remember { mutableStateOf(emptyList<String>()) }
+    val signatureFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val added = uris.take(10).mapNotNull { uri ->
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+                SignatureAsset(uri.toString(), uri.lastPathSegment?.substringAfterLast('/')?.take(180) ?: "Datei", mime, inline = mime.startsWith("image/"))
+            }.getOrNull()
+        }
+        signatureAssets = (signatureAssets + added).distinctBy { it.uri }.take(10)
+    }
     fun account(): MailAccount {
         ReplyPolicy.address(address)
         require(username.isNotBlank() && name.isNotBlank())
-        require(imap.isNotBlank() && smtp.isNotBlank() && !imap.any { it.isWhitespace() || it == '/' } && !smtp.any { it.isWhitespace() || it == '/' })
-        require(imapPort.toInt() in 1..65535 && smtpPort.toInt() in 1..65535)
+        require(imap.isNotBlank() && !imap.any { it.isWhitespace() || it == '/' })
+        require(!smtpEnabled || smtp.isNotBlank() && !smtp.any { it.isWhitespace() || it == '/' })
+        require(imapPort.toInt() in 1..65535 && (!smtpEnabled || smtpPort.toInt() in 1..65535))
         require(authMode == "XOAUTH2" || existing != null || password.isNotBlank())
         if (authMode == "XOAUTH2") {
             require(clientId.isNotBlank() && oauthScope.isNotBlank())
@@ -300,7 +315,17 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
         }
         val selected = folders.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
         require(selected.isNotEmpty() && selected.size <= 20)
-        return MailAccount(id, name, username, address, imap, imapPort.toInt(), incomingStartTls, smtp, smtpPort.toInt(), outgoingStartTls, selected, signature, existing?.enabled ?: true, folderProfiles, authMode, clientId, authorizationEndpoint, tokenEndpoint, oauthScope)
+        return MailAccount(
+            id = id, name = name, username = username, address = address,
+            imapHost = imap, imapPort = imapPort.toInt(), imapStartTls = incomingStartTls,
+            smtpHost = smtp, smtpPort = smtpPort.toIntOrNull() ?: 465, smtpStartTls = outgoingStartTls,
+            smtpEnabled = smtpEnabled, folders = selected, signature = signature,
+            signatureHtml = signatureHtml, signatureMode = signatureMode, signatureAssets = signatureAssets,
+            enabled = existing?.enabled ?: true, folderProfiles = folderProfiles,
+            authMode = authMode, oauthClientId = clientId,
+            oauthAuthorizationEndpoint = authorizationEndpoint, oauthTokenEndpoint = tokenEndpoint,
+            oauthScope = oauthScope
+        )
     }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Mailkonto", "Mail account")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -310,9 +335,12 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             EditField("IMAP Host", imap) { imap = it }
             EditField("IMAP Port", imapPort) { imapPort = it }
             ToggleRow("IMAP STARTTLS", incomingStartTls) { incomingStartTls = it }
-            EditField("SMTP Host", smtp) { smtp = it }
-            EditField("SMTP Port", smtpPort) { smtpPort = it }
-            ToggleRow("SMTP STARTTLS", outgoingStartTls) { outgoingStartTls = it }
+            ToggleRow(tr("Antworten aus KalPlan senden (SMTP)", "Send replies from KalPlan (SMTP)"), smtpEnabled) { smtpEnabled = it }
+            if (smtpEnabled) {
+                EditField("SMTP Host", smtp) { smtp = it }
+                EditField("SMTP Port", smtpPort) { smtpPort = it }
+                ToggleRow("SMTP STARTTLS", outgoingStartTls) { outgoingStartTls = it }
+            }
             Text(tr("Ohne STARTTLS gilt implizites TLS. Zertifikate und Hostnamen werden immer geprüft.", "Without STARTTLS, implicit TLS is used. Certificates and hostnames are always verified."), style = MaterialTheme.typography.bodySmall)
             ChoiceRow(listOf("PASSWORD", "XOAUTH2"), authMode, label = { if (it == "XOAUTH2") "OAuth 2.0" else tr("Passwort", "Password") }) { authMode = it }
             if (authMode == "XOAUTH2") {
@@ -334,7 +362,7 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
                 }) { Text(tr("Speichern und mit OAuth anmelden", "Save and sign in with OAuth")) }
             } else {
                 SecretField(tr("IMAP-Passwort, leer = beibehalten", "IMAP password, empty = keep"), password) { password = it }
-                SecretField(tr("SMTP-Passwort, leer = IMAP-Passwort / beibehalten", "SMTP password, empty = IMAP password / keep"), outgoingPassword) { outgoingPassword = it }
+                if (smtpEnabled) SecretField(tr("SMTP-Passwort, leer = IMAP-Passwort / beibehalten", "SMTP password, empty = IMAP password / keep"), outgoingPassword) { outgoingPassword = it }
             }
             EditField(tr("Überwachte Ordner, ein Pfad pro Zeile", "Watched folders, one path per line"), folders) { folders = it }
             OutlinedButton(enabled = !busy, onClick = {
@@ -347,10 +375,20 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             }) { Text(tr("Speichern und Ordner abrufen", "Save and fetch folders")) }
             serverFolders.forEach { folder -> FilterChip(selected = folder in folders.lines(), onClick = { val current = folders.lines().filter { it.isNotBlank() }; folders = (if (folder in current) current - folder else current + folder).joinToString("\n") }, label = { Text(folder) }) }
             folders.lines().filter { it.isNotBlank() }.forEach { folder ->
-                Text(folder + " · " + tr("Profil", "Profile"), style = MaterialTheme.typography.labelLarge)
+                Text(folder + " · " + tr("Extraktions- und Antwortvorlage", "Extraction and reply template"), style = MaterialTheme.typography.labelLarge)
                 ChoiceRow(listOf("HEURISTIC") + state.profiles.map { it.id }, folderProfiles[folder] ?: "HEURISTIC", label = { id -> if (id == "HEURISTIC") tr("Automatisch", "Automatic") else state.profiles.firstOrNull { it.id == id }?.name ?: tr("Unbekanntes Profil", "Unknown profile") }) { p -> folderProfiles = if (p == "HEURISTIC") folderProfiles - folder else folderProfiles + (folder to p) }
             }
-            EditField(tr("Signatur", "Signature"), signature) { signature = it }
+            Text(tr("Mailsignatur", "Email signature"), style = MaterialTheme.typography.titleMedium)
+            ChoiceRow(listOf("TEXT", "HTML"), signatureMode, label = { if (it == "HTML") "HTML" else tr("Reintext", "Plain text") }) { signatureMode = it }
+            if (signatureMode == "HTML") EditField("HTML", signatureHtml) { signatureHtml = it } else EditField(tr("Reintext", "Plain text"), signature) { signature = it }
+            OutlinedButton(onClick = { signatureFiles.launch(arrayOf("image/*", "application/pdf", "text/plain", "application/octet-stream")) }) { Text(tr("Bild oder Anhang hinzufügen", "Add image or attachment")) }
+            signatureAssets.forEach { asset ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { Text(asset.name, maxLines = 1); Text(asset.mime, style = MaterialTheme.typography.bodySmall) }
+                    if (asset.mime.startsWith("image/")) FilterChip(selected = asset.inline, onClick = { signatureAssets = signatureAssets.map { if (it.uri == asset.uri) it.copy(inline = !it.inline) else it } }, label = { Text(tr("Im Text", "Inline")) })
+                    IconButton(onClick = { signatureAssets = signatureAssets.filterNot { it.uri == asset.uri } }) { Text("×") }
+                }
+            }
             Text(feedback, color = MaterialTheme.colorScheme.primary)
             if (existing != null) TextButton(enabled = !busy, onClick = { onRun { repository.removeAccount(id); onDismiss() } }) { Text(tr("Konto lokal entfernen. Mails bleiben im Verlauf.", "Remove local account. Requests stay in history.")) }
         }

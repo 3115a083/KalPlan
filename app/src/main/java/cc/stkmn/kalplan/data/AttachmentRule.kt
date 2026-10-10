@@ -10,7 +10,9 @@ data class AttachmentRule(
     val nameContains: String = "",
     val minBytes: Int? = null,
     val maxBytes: Int? = null,
-    val inline: Boolean? = null
+    val inline: Boolean? = null,
+    val mimePrefixes: List<String> = emptyList(),
+    val extensions: List<String> = emptyList()
 )
 
 object AttachmentPolicy {
@@ -18,8 +20,8 @@ object AttachmentPolicy {
         if (settings.attachments == "IGNORE") return false
         if (settings.attachments == "ALL") return true
         val matched = settings.attachmentRules.firstOrNull { rule ->
-            (rule.mimePrefix.isBlank() || file.mime.startsWith(rule.mimePrefix, true)) &&
-            (rule.extension.isBlank() || file.name.substringAfterLast('.', "").equals(rule.extension.removePrefix("."), true)) &&
+            (buildList { addAll(rule.mimePrefixes); rule.mimePrefix.takeIf(String::isNotBlank)?.let(::add) }.let { values -> values.isEmpty() || values.any { file.mime.startsWith(it, true) } }) &&
+            (buildList { addAll(rule.extensions); rule.extension.takeIf(String::isNotBlank)?.let(::add) }.let { values -> values.isEmpty() || values.any { file.name.substringAfterLast('.', "").equals(it.removePrefix("."), true) } }) &&
             (rule.nameContains.isBlank() || file.name.contains(rule.nameContains, true)) &&
             (rule.inline == null || file.inline == rule.inline) &&
             (rule.minBytes == null || file.size?.let { it >= rule.minBytes } == true) &&

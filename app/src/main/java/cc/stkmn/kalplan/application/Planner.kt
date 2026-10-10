@@ -16,7 +16,7 @@ data class Assessment(
     val events: List<CalendarEventRef>,
     val origin: String,
     val nextLocation: String = "",
-    val travelCalendarIds: Set<String> = emptySet()
+    val travelEventIds: Set<String> = emptySet()
 )
 
 class Planner(private val context: Context, private val repository: AppRepository) {
@@ -98,6 +98,11 @@ class Planner(private val context: Context, private val repository: AppRepositor
         val visibleOrigin = if (request.manualOrigin.isNotBlank()) origin else if (previousRelevant && previous != null && selected.firstOrNull { it.id == previous.calendarId }?.showLocation != true && usableLocation(previous) != null) "" else origin
         val nextVisible = if (request.manualAfterDestination.isNotBlank()) request.manualAfterDestination else
             afterLocation?.takeIf { selected.firstOrNull { p -> p.id == next?.calendarId }?.showLocation == true }.orEmpty()
-        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin, nextVisible, selected.filter { it.travelCalendar }.mapTo(mutableSetOf()) { it.id })
+        val travelEventIds = raw.filter { event ->
+            selected.firstOrNull { it.id == event.calendarId }?.let { privacy ->
+                privacy.travelCalendar && (privacy.travelTitleContains.isBlank() || event.title.orEmpty().contains(privacy.travelTitleContains, true))
+            } == true
+        }.mapTo(mutableSetOf()) { it.id }
+        return Assessment(status, reasons.ifEmpty { listOf("time_clear") }, safeEvents, visibleOrigin, nextVisible, travelEventIds)
     }
 }

@@ -47,7 +47,12 @@ object PlanningPolicy {
         require(settings.billingStepMinutes in 1..1440)
         require(listOf(settings.workCentsPerHour, settings.travelCentsPerHour, settings.centsPerKm, settings.flatCents).all { it in 0..100_000_000 })
         val step = settings.billingStepMinutes
-        val units = BigDecimal(candidate.durationMinutes).divide(BigDecimal(step), 0, if (settings.roundUp) RoundingMode.CEILING else RoundingMode.HALF_UP).toInt().coerceAtLeast(1)
+        val roundingMode = when (settings.roundingMode) {
+            "DOWN" -> RoundingMode.FLOOR
+            "NEAREST" -> RoundingMode.HALF_UP
+            else -> if (settings.roundUp) RoundingMode.CEILING else RoundingMode.HALF_UP
+        }
+        val units = BigDecimal(candidate.durationMinutes).divide(BigDecimal(step), 0, roundingMode).toInt().coerceAtLeast(1)
         val billed = units * step
         val factor = if (settings.roundTrip) 2 else 1
         fun timeCents(minutes: Int, rate: Long) = BigDecimal(minutes).multiply(BigDecimal(rate)).divide(BigDecimal(60), 0, RoundingMode.HALF_UP).longValueExact()
@@ -61,16 +66,20 @@ object PlanningPolicy {
     }
     fun valueSettings(request: StoredRequest, settings: Settings): ValueSettings {
         val override = settings.labels.filter { it.name in request.labels && it.valueOverride != null }.maxByOrNull { it.score }?.valueOverride
-            ?: return settings.value
-        return settings.value.copy(
+        val base = settings.value
+        val merged = if (override == null) base else base.copy(
             workCentsPerHour = override.workCentsPerHour ?: settings.value.workCentsPerHour,
             travelCentsPerHour = override.travelCentsPerHour ?: settings.value.travelCentsPerHour,
             centsPerKm = override.centsPerKm ?: settings.value.centsPerKm,
             flatCents = override.flatCents ?: settings.value.flatCents,
+            flatFeePresetId = override.flatFeePresetId ?: settings.value.flatFeePresetId,
             billingStepMinutes = override.billingStepMinutes ?: settings.value.billingStepMinutes,
             roundUp = override.roundUp ?: settings.value.roundUp,
+            roundingMode = override.roundingMode ?: settings.value.roundingMode,
             roundTrip = override.roundTrip ?: settings.value.roundTrip
         )
+        val preset = settings.flatFeePresets.firstOrNull { it.id == merged.flatFeePresetId }
+        return if (preset == null) merged else merged.copy(flatCents = preset.flatCents, distanceBands = preset.distanceBands)
     }
     fun syncPaused(settings: Settings, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
         val day = now.dayOfWeek.value

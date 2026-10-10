@@ -56,6 +56,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var settingsFocus by rememberSaveable { mutableStateOf(0) }
     val planner = remember { Planner(context, repository) }
     fun run(action: suspend () -> Unit) {
         if (busy || !ready) return
@@ -85,7 +86,9 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
         Scaffold(
             topBar = {
                 TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Icon(painter = androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.size(36.dp))
+                    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.size(42.dp)) {
+                        Icon(painter = androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground), contentDescription = null, tint = Color.Unspecified, modifier = Modifier.padding(5.dp))
+                    }
                     Text(if (selected == null) "KalPlan" else tr("Terminanfrage", "Appointment request"), fontWeight = FontWeight.Bold)
                 } }, navigationIcon = {
                     if (selected != null) IconButton(onClick = { replyAction = null; selected = null }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, tr("Zurück", "Back")) }
@@ -116,9 +119,9 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                 if (ready) {
                     if (request != null) {
                         RequestDetail(request, state, repository, planner, busy, replyAction,
-                            onAction = { replyAction = it }, onRun = ::run, onClose = { selected = null; replyAction = null })
+                            onAction = { replyAction = it }, onRun = ::run, onClose = { selected = null; replyAction = null }, onSetupMail = { selected = null; replyAction = null; settingsFocus++; section = "SETTINGS" })
                     } else when (section) {
-                        "SETTINGS" -> SettingsScreen(state, repository, busy, ::run)
+                        "SETTINGS" -> key(settingsFocus) { SettingsScreen(state, repository, busy, ::run, focusMail = settingsFocus > 0) }
                         "CALENDAR" -> CalendarScreen(state, repository, planner, onOpen = { selected = it })
                         "SWIPE" -> SwipeScreen(state, planner, onOpen = { selected = it }, onAction = { id, action -> selected = id; replyAction = action },
                             onLater = { id -> run { repository.request(id) { it.copy(status = "LATER") } } }, onUnclear = { id -> run { repository.request(id) { it.copy(status = "UNCLEAR", unclear = true) } } }, onClose = { section = "REQUESTS" })
@@ -134,7 +137,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                                     Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                         Text(tr("Hier ist noch Platz für deine Planung.", "Ready for your next appointment."), style = MaterialTheme.typography.titleMedium)
                                         Text(tr("Richte ein Mailkonto ein. KalPlan verarbeitet eingehende Anfragen automatisch.", "Set up an email account. KalPlan processes incoming requests automatically."))
-                                        Button(onClick = { section = "SETTINGS" }) { Text(tr("Einrichten", "Set up")) }
+                                        Button(onClick = { settingsFocus++; section = "SETTINGS" }) { Text(tr("Nachricht einrichten", "Set up email")) }
                                     } }
                                 }
                                 items(requests, key = { it.id }) { r -> RequestCard(r, state.settings, planner, onClick = { selected = r.id }) }
@@ -167,7 +170,7 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
             Box(Modifier.width(4.dp).fillMaxHeight().background(border))
             Column(Modifier.weight(1f).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                    PriorityMark(priority.score)
+                    if (priority.score !in 45..64) PriorityMark(priority.score) else Spacer(Modifier.width(1.dp))
                     StatusPill(status)
                 }
                 Text(appointmentTime(request.candidate ?: request.candidates.firstOrNull()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

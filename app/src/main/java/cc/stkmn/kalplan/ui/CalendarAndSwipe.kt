@@ -8,12 +8,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.DirectionsCar
+import androidx.compose.material.icons.outlined.NavigateNext
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
@@ -33,81 +38,112 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
     val context = LocalContext.current
     var dayText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val day = LocalDate.parse(dayText)
+    var view by rememberSaveable { mutableStateOf("DAY") }
+    val dayCount = when (view) { "THREE" -> 3; "WEEK" -> 7; else -> 1 }
+    val shownDays = (0 until dayCount).map { day.plusDays(it.toLong()) }
     var events by remember { mutableStateOf(emptyList<CalendarEventRef>()) }
     var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(day, state.calendars, state.requests) {
+    var selectedEvent by remember { mutableStateOf<CalendarEventRef?>(null) }
+    LaunchedEffect(day, dayCount, state.calendars, state.requests) {
         try {
             val zone = ZoneId.systemDefault()
             val privacy = state.calendars.filter { it.included }.associateBy { it.id }
-            events = AndroidCalendarReader(context).events(day.atStartOfDay(zone).toInstant(), day.plusDays(1).atStartOfDay(zone).toInstant(), privacy.keys).map { e ->
+            events = AndroidCalendarReader(context).events(day.atStartOfDay(zone).toInstant(), day.plusDays(dayCount.toLong()).atStartOfDay(zone).toInstant(), privacy.keys).map { e ->
                 val p = privacy.getValue(e.calendarId)
                 e.copy(title = if (p.showTitle) e.title else null, location = if (p.showLocation) e.location else null, description = if (p.showDescription) e.description else null)
             }
             failed = false
         } catch (_: Exception) { failed = true; events = emptyList() }
     }
-    val requests = state.requests.filter { r -> r.status != "DISMISSED" && r.candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() == day } == true }
+    val requests = state.requests.filter { r -> r.status != "DISMISSED" && r.candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() in shownDays } == true }
     val colors = remember(state.calendars) { state.calendars.mapIndexed { i, p -> p.id to listOf(Color(0xFF4365DF), Color(0xFF208363), Color(0xFFAC5A20))[i % 3] }.toMap() }
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { dayText = day.minusDays(7).toString() }) { Text("‹") }
+                TextButton(onClick = { dayText = day.minusDays(dayCount.toLong()).toString() }) { Text("‹") }
                 Text(day.format(DateTimeFormatter.ofPattern("MMMM yyyy", androidx.compose.ui.platform.LocalConfiguration.current.locales[0])), style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = { dayText = day.plusDays(7).toString() }) { Text("›") }
+                TextButton(onClick = { dayText = day.plusDays(dayCount.toLong()).toString() }) { Text("›") }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            ChoiceRow(listOf("DAY", "THREE", "WEEK"), view, label = { when (it) { "THREE" -> tr("3 Tage", "3 days"); "WEEK" -> tr("Woche", "Week"); else -> tr("Tag", "Day") } }) { view = it }
+            Row(Modifier.fillMaxWidth().pointerInput(dayCount) {
+                var drag = 0f
+                detectHorizontalDragGestures(onHorizontalDrag = { change, amount -> change.consume(); drag += amount }, onDragEnd = {
+                    if (kotlin.math.abs(drag) > 80f) dayText = (if (drag < 0) day.plusDays(dayCount.toLong()) else day.minusDays(dayCount.toLong())).toString()
+                })
+            }, horizontalArrangement = Arrangement.SpaceEvenly) {
                 val monday = day.minusDays((day.dayOfWeek.value - 1).toLong())
                 (0..6).forEach { offset ->
                     val date = monday.plusDays(offset.toLong())
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, androidx.compose.ui.platform.LocalConfiguration.current.locales[0]), style = MaterialTheme.typography.labelSmall)
                         FilterChip(selected = day == date, onClick = { dayText = date.toString() }, label = { Text(date.dayOfMonth.toString()) })
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            state.requests.filter { it.pending && it.candidate?.startMillis?.let { ms -> Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == date } == true }
+                                .flatMap { it.labels }.distinct().take(4).forEach { label ->
+                                    Box(Modifier.size(5.dp).background(parseTimelineColor(state.settings.labels.firstOrNull { it.name == label }?.colorHex), RoundedCornerShape(50)))
+                                }
+                        }
                     }
                 }
+            }
+            state.requests.filter { it.pending && it.candidate?.startMillis != null }.minByOrNull { it.candidate!!.startMillis!! }?.let { next ->
+                OutlinedButton(onClick = { onOpen(next.id) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Nächste Entscheidung", "Next decision")); Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.NavigateNext, null) }
             }
             if (state.calendars.none { it.included } || failed) Text(tr("Kalender auswählen und Leseberechtigung erteilen. Bis dahin ist die Machbarkeit unklar.", "Select calendars and grant read permission. Until then, feasibility is unknown."), color = MaterialTheme.colorScheme.error)
             if (requests.isEmpty() && events.isEmpty()) Text(tr("Keine Termine an diesem Tag.", "No appointments on this day."))
         }
-        val zone = ZoneId.systemDefault()
-        for (hour in 0..23) {
-            val hourEvents = events.filter { it.start.atZone(zone).hour == hour || hour == 0 && it.start.atZone(zone).toLocalDate().isBefore(day) }
-            val hourRequests = requests.filter { Instant.ofEpochMilli(it.candidate!!.startMillis!!).atZone(zone).hour == hour }
-            if (hourEvents.isNotEmpty() || hourRequests.isNotEmpty() || hour in 8..20) {
-                item(key = "hour-$hour") {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("%02d:00".format(hour), modifier = Modifier.width(45.dp).padding(top = 10.dp), style = MaterialTheme.typography.labelSmall)
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (hourEvents.isEmpty() && hourRequests.isEmpty()) HorizontalDivider(Modifier.padding(vertical = 16.dp))
-                            hourEvents.forEach { e ->
-                                val isReservation = state.requests.any { it.reservationEventId == e.id.substringBefore('@') }
-                                val privacy = state.calendars.firstOrNull { it.id == e.calendarId }
-                                val travel = privacy?.travelCalendar == true
-                                var expanded by rememberSaveable(e.id) { mutableStateOf(false) }
-                                Surface(modifier = Modifier.clickable(enabled = !e.description.isNullOrBlank()) { expanded = !expanded }, color = if (isReservation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else (colors[e.calendarId] ?: MaterialTheme.colorScheme.secondary).copy(alpha = 0.16f),
-                                    shape = RoundedCornerShape(12.dp), border = if (isReservation) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null) {
-                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                        Text(e.start.atZone(zone).toLocalTime().toString() + " – " + e.end.atZone(zone).toLocalTime(), style = MaterialTheme.typography.labelLarge)
-                                        Text((if (isReservation) tr("[Reserviert] ", "[Reserved] ") else if (travel) tr("Fahrt · ", "Travel · ") else "") + (e.title ?: tr("Belegt", "Busy")))
-                                        e.location?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                                        if (!e.description.isNullOrBlank()) {
-                                            Text(if (expanded) tr("Beschreibung ausblenden", "Hide description") else tr("Beschreibung anzeigen", "Show description"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
-                                            if (expanded) Text(e.description.take(10_000), style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-                            }
-                            hourRequests.filterNot { it.reservationEventId != null && events.any { e -> e.id.substringBefore('@') == it.reservationEventId } }.forEach { r ->
-                                val reserved = r.status in setOf("RESERVED", "RESERVATION_FAILED")
-                                Card(onClick = { onOpen(r.id) }, border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = if (reserved) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else MaterialTheme.colorScheme.surfaceContainerHigh)) {
-                                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(if (reserved) tr("[Reserviert]", "[Reserved]") else tr("Anfrage", "Request"), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                                        Text(r.subject, fontWeight = FontWeight.SemiBold)
-                                        LabelChips(r.labels, state.settings.labels, 3)
-                                    }
-                                }
-                            }
-                        }
+        item {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                shownDays.forEach { date ->
+                    TimelineDay(date, events, requests, state, colors, if (dayCount == 1) 330.dp else if (dayCount == 3) 210.dp else 150.dp, onOpen, onEvent = { selectedEvent = it })
+                }
+            }
+        }
+    }
+    selectedEvent?.let { event -> AlertDialog(onDismissRequest = { selectedEvent = null }, title = { Text(event.title ?: tr("Kalendertermin", "Calendar event")) }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("${event.start.atZone(ZoneId.systemDefault()).toLocalDateTime()} – ${event.end.atZone(ZoneId.systemDefault()).toLocalTime()}")
+            event.location?.let { Text(it) }
+            event.description?.let { SelectionContainer { Text(it.take(100_000)) } }
+        }
+    }, confirmButton = { TextButton(onClick = { selectedEvent = null }) { Text(tr("Schließen", "Close")) } }) }
+}
+
+private fun parseTimelineColor(hex: String?) = runCatching { Color(android.graphics.Color.parseColor("#${hex.orEmpty().removePrefix("#")}")) }.getOrDefault(Color(0xFF6750A4))
+
+@Composable
+private fun TimelineDay(date: LocalDate, events: List<CalendarEventRef>, requests: List<StoredRequest>, state: AppData, colors: Map<String, Color>, width: androidx.compose.ui.unit.Dp, onOpen: (String) -> Unit, onEvent: (CalendarEventRef) -> Unit) {
+    val zone = ZoneId.systemDefault(); val hourHeight = 52.dp
+    Column(Modifier.width(width)) {
+        Text(date.format(DateTimeFormatter.ofPattern("EEE, dd.MM.", androidx.compose.ui.platform.LocalConfiguration.current.locales[0])), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 44.dp, bottom = 6.dp))
+        Box(Modifier.fillMaxWidth().height(hourHeight * 24)) {
+            (0..23).forEach { hour ->
+                Text("%02d:00".format(hour), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp).offset(y = hourHeight * hour))
+                HorizontalDivider(Modifier.padding(start = 42.dp).offset(y = hourHeight * hour))
+            }
+            events.filter { it.start.atZone(zone).toLocalDate() == date || it.end.atZone(zone).toLocalDate() == date }.forEach { event ->
+                val start = maxOf(event.start, date.atStartOfDay(zone).toInstant()); val end = minOf(event.end, date.plusDays(1).atStartOfDay(zone).toInstant())
+                val startMinutes = Duration.between(date.atStartOfDay(zone).toInstant(), start).toMinutes().coerceIn(0, 1439)
+                val duration = Duration.between(start, end).toMinutes().coerceAtLeast(1)
+                val privacy = state.calendars.firstOrNull { it.id == event.calendarId }
+                val travel = privacy?.travelCalendar == true && (privacy.travelTitleContains.isBlank() || event.title.orEmpty().contains(privacy.travelTitleContains, true))
+                val reservation = state.requests.any { it.reservationEventId == event.id.substringBefore('@') }
+                val lineColor = colors[event.calendarId] ?: MaterialTheme.colorScheme.secondary
+                val modifier = Modifier.padding(start = 44.dp, end = 2.dp).fillMaxWidth().offset(y = hourHeight * (startMinutes / 60f)).height((hourHeight * (duration / 60f)).coerceAtLeast(30.dp)).clickable { onEvent(event) }
+                    .then(if (travel) Modifier.drawBehind { drawRoundRect(lineColor, style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) } else Modifier)
+                Surface(modifier = modifier, shape = RoundedCornerShape(10.dp), color = if (reservation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .75f) else lineColor.copy(alpha = .2f), border = if (!travel) BorderStroke(1.dp, lineColor) else null) {
+                    Column(Modifier.padding(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) { Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f)); if (travel) Icon(Icons.Outlined.DirectionsCar, null, Modifier.size(15.dp)) }
+                        Text((if (reservation) tr("Reserviert · ", "Reserved · ") else "") + (event.title ?: tr("Belegt", "Busy")), maxLines = if (duration > 75) 2 else 1, style = MaterialTheme.typography.bodySmall)
+                        if (travel) Text(tr("⋯ führt zum Auftrag", "⋯ connects to order"), style = MaterialTheme.typography.labelSmall)
                     }
+                }
+            }
+            requests.filter { it.candidate?.startMillis?.let { ms -> Instant.ofEpochMilli(ms).atZone(zone).toLocalDate() == date } == true && (it.reservationEventId == null || events.none { e -> e.id.substringBefore('@') == it.reservationEventId }) }.forEach { request ->
+                val candidate = request.candidate!!; val start = Instant.ofEpochMilli(candidate.startMillis!!); val end = Instant.ofEpochMilli(candidate.endMillis ?: candidate.startMillis + candidate.durationMinutes * 60_000L)
+                val startMinutes = Duration.between(date.atStartOfDay(zone).toInstant(), start).toMinutes().coerceIn(0, 1439); val duration = Duration.between(start, end).toMinutes().coerceAtLeast(1)
+                Card(onClick = { onOpen(request.id) }, modifier = Modifier.padding(start = 48.dp, end = 5.dp).fillMaxWidth().offset(y = hourHeight * (startMinutes / 60f)).height((hourHeight * (duration / 60f)).coerceAtLeast(34.dp)), border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .86f))) {
+                    Column(Modifier.padding(6.dp)) { Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall); Text(request.subject, maxLines = 2, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }

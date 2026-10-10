@@ -6,10 +6,16 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ThumbDown
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -26,7 +32,7 @@ import java.util.UUID
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RequestDetail(request: StoredRequest, state: AppData, repository: AppRepository, planner: Planner, busy: Boolean,
-    replyAction: String?, onAction: (String?) -> Unit, onRun: (suspend () -> Unit) -> Unit, onClose: () -> Unit) {
+    replyAction: String?, onAction: (String?) -> Unit, onRun: (suspend () -> Unit) -> Unit, onClose: () -> Unit, onSetupMail: () -> Unit) {
     val context = LocalContext.current
     var tab by rememberSaveable(request.id) { mutableStateOf(0) }
     var assessment by remember(request.id) { mutableStateOf<Assessment?>(null) }
@@ -41,11 +47,12 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             onRun { repository.request(request.id) { it.copy(status = "DECLINED") }; onAction(null); onClose() }
         })
     } else if (replyAction != null) {
-        ReplyComposer(request, replyAction == "accept", state, repository, busy, onRun, onDone = { onAction(null) }, onCancel = { onAction(null) })
+        ReplyComposer(request, replyAction == "accept", state, repository, busy, onRun, onDone = { onAction(null) }, onCancel = { onAction(null) }, onSetupMail = onSetupMail)
     } else {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                PriorityMark(PlanningPolicy.priority(request, state.settings).score)
+                val score = PlanningPolicy.priority(request, state.settings).score
+                if (score !in 45..64) PriorityMark(score) else Spacer(Modifier.width(1.dp))
                 StatusPill(if (request.pending) if (request.unclear) "UNKNOWN" else assessment?.status ?: "UNKNOWN" else request.status)
             }
             Text(request.subject, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
@@ -77,25 +84,41 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                         result.reasons.forEach { Text(reasonText(it), style = MaterialTheme.typography.bodyMedium) }
                         Text(tr("Tagesübersicht", "Day context"), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         if (result.events.isEmpty()) Text(tr("Keine ausgewählten Termine in diesem Zeitraum.", "No selected events in this period."))
-                        result.events.forEach { event -> CalendarContextEvent(event, event.calendarId in result.travelCalendarIds, request.candidate) }
+                        request.candidate?.let { CompactDayContext(result.events, result.travelEventIds, it) }
                     }
                     if (state.settings.value.enabled && request.candidate != null) {
                         val value = PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, PlanningPolicy.valueSettings(request, state.settings))
                         Text(tr("Auftragswert, Schätzung", "Estimated order value"), style = MaterialTheme.typography.titleMedium)
                         Text(String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "≈ %.2f €", value.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium)
-                        Text(tr("Arbeitszeit", "Work") + ": ${value.billedMinutes} min · ${value.workCents / 100.0} €\n" + tr("Fahrtzeit", "Travel") + ": ${value.travelCents / 100.0} €\n" + tr("Kilometer", "Distance") + ": ${value.distanceCents / 100.0} €\n" + tr("Pauschalen", "Flat fees") + ": ${value.flatCents / 100.0} €")
+                        Column {
+                            if (value.workCents > 0) Text(tr("Arbeitszeit", "Work") + ": ${value.billedMinutes} min · ${value.workCents / 100.0} €")
+                            if (value.travelCents > 0) Text(tr("Fahrtzeit", "Travel") + ": ${value.travelCents / 100.0} €")
+                            if (value.distanceCents > 0) Text(tr("Kilometer", "Distance") + ": ${value.distanceCents / 100.0} €")
+                            if (value.flatCents > 0) Text(tr("Pauschalen", "Flat fees") + ": ${value.flatCents / 100.0} €")
+                        }
                     }
                     if (request.pending) {
                         OutlinedButton(enabled = !busy, onClick = { routing = true }) { Text(tr("Fahrt manuell prüfen", "Check travel manually")) }
                         request.travelMinutes?.let { Text("$it min · ${request.distanceKm ?: "?"} km · " + tr("Schätzung", "Estimate")) }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(enabled = !busy, onClick = { onAction("accept") }, modifier = Modifier.weight(1f)) { Text(tr("Annehmen", "Accept")) }
-                            OutlinedButton(enabled = !busy, onClick = { onAction("decline") }, modifier = Modifier.weight(1f)) { Text(tr("Ablehnen", "Decline")) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                            ActionIconButton(tr("Ablehnen", "Decline"), MaterialTheme.colorScheme.errorContainer, MaterialTheme.colorScheme.onErrorContainer, Icons.Outlined.ThumbDown, !busy) { onAction("decline") }
+                            ActionIconButton(tr("Lokal entfernen", "Dismiss locally"), MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer, Icons.Outlined.Close, !busy) { dismiss = true }
+                            ActionIconButton(tr("Annehmen", "Accept"), Color(0xFFB9F3D2), Color(0xFF075C39), Icons.Outlined.ThumbUp, !busy) { onAction("accept") }
                         }
-                        OutlinedButton(enabled = !busy, onClick = { dismiss = true }) { Text(tr("Lokal entfernen", "Dismiss locally")) }
                     }
                 }
-                1 -> SelectionContainer { Text(request.body) }
+                1 -> {
+                    MailHeader(tr("Von", "From"), request.sender)
+                    MailHeader(tr("An", "To"), request.recipient)
+                    MailHeader(tr("Betreff", "Subject"), request.subject)
+                    HorizontalDivider()
+                    SelectionContainer { Text(request.body) }
+                    val inline = request.attachmentMeta.filter { it.inline && it.mime.startsWith("image/") }
+                    if (inline.isNotEmpty()) {
+                        ToggleRow(tr("Eingebettete Bilder anzeigen", "Show inline images"), state.settings.showInlineMailImages) { show -> onRun { repository.update { it.copy(settings = it.settings.copy(showInlineMailImages = show)) } } }
+                        if (state.settings.showInlineMailImages) inline.forEach { image -> Text("🖼 ${image.name}", style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
                 2 -> {
                     val files = request.attachmentMeta.filter { AttachmentPolicy.visible(it, state.settings) }
                     if (files.isEmpty()) Text(tr("Keine relevanten Anhänge.", "No relevant attachments."))
@@ -133,6 +156,24 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
     if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, assessment?.nextLocation.orEmpty(), repository, busy, onRun, onDismiss = { routing = false })
     if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })
     if (dismiss) AlertDialog(onDismissRequest = { dismiss = false }, title = { Text(tr("Aus KalPlan entfernen?", "Dismiss from KalPlan?")) }, text = { Text(tr("Die Quellmail bleibt erhalten. Der Eintrag bleibt im Verlauf.", "The source email is preserved. The item stays in history.")) }, confirmButton = { TextButton(onClick = { dismiss = false; onRun { repository.request(request.id) { it.copy(status = "DISMISSED") }; onClose() } }) { Text(tr("Entfernen", "Dismiss")) } }, dismissButton = { TextButton(onClick = { dismiss = false }) { Text(tr("Abbrechen", "Cancel")) } })
+}
+
+@Composable
+private fun MailHeader(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(label, modifier = Modifier.width(62.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SelectionContainer { Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium) }
+    }
+}
+
+@Composable
+private fun ActionIconButton(label: String, background: Color, foreground: Color, icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
+    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Surface(shape = RoundedCornerShape(18.dp), color = background, contentColor = foreground) {
+            IconButton(enabled = enabled, onClick = onClick, modifier = Modifier.size(54.dp)) { Icon(icon, label) }
+        }
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
 }
 
 @Composable
@@ -211,6 +252,39 @@ private fun CalendarContextEvent(event: cc.stkmn.kalplan.domain.port.CalendarEve
 }
 
 @Composable
+private fun CompactDayContext(events: List<cc.stkmn.kalplan.domain.port.CalendarEventRef>, travelIds: Set<String>, candidate: StoredCandidate) {
+    val zone = ZoneId.systemDefault(); val hourHeight = 38.dp
+    val candidateStart = candidate.startMillis?.let(Instant::ofEpochMilli) ?: return
+    val candidateEnd = candidate.endMillis?.let(Instant::ofEpochMilli) ?: candidateStart.plusSeconds(candidate.durationMinutes * 60L)
+    val day = candidateStart.atZone(zone).toLocalDate(); val dayStart = day.atStartOfDay(zone).toInstant()
+    val startMinutes = Duration.between(dayStart, candidateStart).toMinutes().coerceIn(0, 1439)
+    val scroll = rememberScrollState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    LaunchedEffect(candidate.startMillis) { scroll.scrollTo(with(density) { (hourHeight * ((startMinutes / 60f) - 3f).coerceAtLeast(0f)).roundToPx() }) }
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Box(Modifier.fillMaxWidth().height(280.dp).verticalScroll(scroll)) {
+            Box(Modifier.fillMaxWidth().height(hourHeight * 24)) {
+                (0..23).forEach { hour ->
+                    Text("%02d:00".format(hour), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(42.dp).padding(start = 6.dp).offset(y = hourHeight * hour))
+                    HorizontalDivider(Modifier.padding(start = 44.dp).offset(y = hourHeight * hour))
+                }
+                events.filter { it.start.atZone(zone).toLocalDate() == day || it.end.atZone(zone).toLocalDate() == day }.forEach { event ->
+                    val start = maxOf(event.start, dayStart); val end = minOf(event.end, day.plusDays(1).atStartOfDay(zone).toInstant())
+                    val eventStart = Duration.between(dayStart, start).toMinutes().coerceIn(0, 1439); val duration = Duration.between(start, end).toMinutes().coerceAtLeast(1)
+                    Surface(Modifier.padding(start = 48.dp, end = 8.dp).fillMaxWidth().offset(y = hourHeight * (eventStart / 60f)).height((hourHeight * (duration / 60f)).coerceAtLeast(24.dp)), shape = RoundedCornerShape(8.dp), color = if (event.id in travelIds) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.secondaryContainer) {
+                        Text((if (event.id in travelIds) "🚗 " else "") + (event.title ?: tr("Belegt", "Busy")), Modifier.padding(5.dp), maxLines = 2, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                val duration = Duration.between(candidateStart, candidateEnd).toMinutes().coerceAtLeast(1)
+                Surface(Modifier.padding(start = 52.dp, end = 12.dp).fillMaxWidth().offset(y = hourHeight * (startMinutes / 60f)).height((hourHeight * (duration / 60f)).coerceAtLeast(28.dp)), shape = RoundedCornerShape(8.dp), color = MaterialTheme.colorScheme.primaryContainer, border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
+                    Text(tr("Diese Anfrage", "This request") + " · ${candidateStart.atZone(zone).toLocalTime()}–${candidateEnd.atZone(zone).toLocalTime()}", Modifier.padding(6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun DiscardRequestConfirmation(request: StoredRequest, busy: Boolean, onCancel: () -> Unit, onConfirm: () -> Unit) {
     AlertDialog(onDismissRequest = { if (!busy) onCancel() }, title = { Text(tr("Anfrage ablehnen?", "Decline request?")) },
         text = { Text(tr("Die Anfrage wird in KalPlan verworfen. Es wird keine Nachricht gesendet und die Quellmail bleibt unverändert.", "The request will be dismissed in KalPlan. No message is sent and the source email remains unchanged.")) },
@@ -220,7 +294,7 @@ private fun DiscardRequestConfirmation(request: StoredRequest, busy: Boolean, on
 
 @Composable
 private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppData, repository: AppRepository, busy: Boolean,
-    onRun: (suspend () -> Unit) -> Unit, onDone: () -> Unit, onCancel: () -> Unit) {
+    onRun: (suspend () -> Unit) -> Unit, onDone: () -> Unit, onCancel: () -> Unit, onSetupMail: () -> Unit) {
     val context = LocalContext.current
     val settings = state.settings
     val candidate = request.candidate
@@ -235,13 +309,15 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
     var result by remember { mutableStateOf<String?>(null) }
     val recipient = runCatching { ReplyPolicy.recipient(request, settings) }.getOrNull()
     val simulation = request.demo || settings.debug && !settings.debugSendToTest
-    val allowed = !busy && (simulation || recipient != null && ReplyPolicy.canSend(request)) && (!accept || request.candidate != null && !request.unclear)
+    val configuredAccount = state.accounts.firstOrNull { it.id == request.accountId }
+    val allowed = !busy && (simulation || recipient != null && ReplyPolicy.canSend(request) && configuredAccount?.smtpEnabled == true) && (!accept || request.candidate != null && !request.unclear)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(if (accept) tr("Annahme vorbereiten", "Prepare acceptance") else tr("Absage vorbereiten", "Prepare decline"), style = MaterialTheme.typography.headlineSmall)
         Text(tr("Empfänger: ", "Recipient: ") + (recipient ?: if (simulation) tr("Simulation, kein Versand", "Simulation, no send") else tr("Ungültig. Konto prüfen.", "Invalid. Check account.")), fontWeight = FontWeight.Bold)
         Text(appointmentTime(candidate))
         if (settings.debug) Text(tr("Debug: Versand nur an Testadresse. Kalenderwrites werden simuliert.", "Debug: only the test address can receive mail. Calendar writes are simulated."), color = MaterialTheme.colorScheme.error)
         if (request.accountId.isBlank() && !request.demo) Text(tr("Dieser lokale Import hat keine Quellmail. Du kannst den Text für eine manuelle Antwort kopieren.", "This local import has no source email. Copy the text for a manual reply."))
+        if (!simulation && (configuredAccount == null || !configuredAccount.smtpEnabled)) Button(onClick = onSetupMail) { Text(tr("Nachricht einrichten", "Set up email")) }
         OutlinedTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
         state.accounts.firstOrNull { it.id == request.accountId }?.signature?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (accept) Text(tr("Nach Versand: wartet auf Rückmeldung. Eine optionale Reservierung ist kein bestätigter Auftrag.", "After sending: waiting for response. An optional reservation is not a confirmed booking."))
