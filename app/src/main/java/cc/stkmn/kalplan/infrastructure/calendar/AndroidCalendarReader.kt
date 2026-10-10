@@ -20,7 +20,7 @@ class AndroidCalendarReader(
             CalendarContract.Calendars._ID,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,
             CalendarContract.Calendars.CALENDAR_COLOR,
-            CalendarContract.Calendars.VISIBLE
+            CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL
         )
 
         buildList {
@@ -32,7 +32,7 @@ class AndroidCalendarReader(
                 CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " COLLATE NOCASE ASC"
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    if (cursor.getInt(3) == 0) continue
+                    if (cursor.getInt(3) < CalendarContract.Calendars.CAL_ACCESS_READ) continue
                     add(
                         CalendarRef(
                             id = cursor.getLong(0).toString(),
@@ -54,7 +54,7 @@ class AndroidCalendarReader(
         if (calendarIds.isEmpty()) return@withContext emptyList()
 
         val numericIds = calendarIds.mapNotNull { it.toLongOrNull() }.toSet()
-        if (numericIds.isEmpty()) return@withContext emptyList()
+        require(numericIds.size == calendarIds.size) { "Invalid calendar selection" }
 
         val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().also { builder ->
             ContentUris.appendId(builder, from.toEpochMilli())
@@ -70,27 +70,33 @@ class AndroidCalendarReader(
             CalendarContract.Instances.EVENT_LOCATION,
             CalendarContract.Instances.DESCRIPTION,
             CalendarContract.Instances.ALL_DAY,
-            CalendarContract.Instances.AVAILABILITY
+            CalendarContract.Instances.AVAILABILITY,
+            CalendarContract.Instances.SELF_ATTENDEE_STATUS
         )
 
         buildList {
             context.contentResolver.query(
                 uri,
                 projection,
-                null,
-                null,
+                CalendarContract.Instances.CALENDAR_ID + " IN (" + numericIds.joinToString(",") { "?" } + ")",
+                numericIds.map { it.toString() }.toTypedArray(),
                 CalendarContract.Instances.BEGIN + " ASC"
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
                     val calendarId = cursor.getLong(1)
-                    if (calendarId !in numericIds) continue
+                    if (calendarId !in numericIds || cursor.getInt(9) == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED) continue
+                    fun eventTime(index: Int): Instant {
+                        val instant = Instant.ofEpochMilli(cursor.getLong(index))
+                        return if (cursor.getInt(7) != 0) instant.atZone(java.time.ZoneOffset.UTC).toLocalDate()
+                            .atStartOfDay(java.time.ZoneId.systemDefault()).toInstant() else instant
+                    }
 
                     add(
                         CalendarEventRef(
                             id = cursor.getLong(0).toString() + "@" + cursor.getLong(2),
                             calendarId = calendarId.toString(),
-                            start = Instant.ofEpochMilli(cursor.getLong(2)),
-                            end = Instant.ofEpochMilli(cursor.getLong(3)),
+                            start = eventTime(2),
+                            end = eventTime(3),
                             title = cursor.getString(4),
                             location = cursor.getString(5),
                             description = cursor.getString(6),
@@ -99,7 +105,7 @@ class AndroidCalendarReader(
                         )
                     )
                 }
-            }
+            } ?: error("Calendar query failed")
         }
     }
 
@@ -110,3 +116,4 @@ class AndroidCalendarReader(
         else -> CalendarBusyStatus.UNKNOWN
     }
 }
+

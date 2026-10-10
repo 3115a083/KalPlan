@@ -9,6 +9,12 @@ data class ProfileValidationError(
 class ProfileValidator {
     fun validate(profile: ExtractionProfile): List<ProfileValidationError> {
         val errors = mutableListOf<ProfileValidationError>()
+        if (listOf(profile.acceptTemplate, profile.declineTemplate).any { it != null && it.length > 100_000 })
+            errors += ProfileValidationError("reply_template_limit", "Reply template exceeds size limit.")
+        if (profile.matchers.size > 100 || profile.extractors.size > 100)
+            return listOf(ProfileValidationError("rule_limit", "Maximum 100 rules per profile."))
+        if (profile.defaultDurationMinutes != null && profile.defaultDurationMinutes !in 1..10080)
+            errors += ProfileValidationError("duration", "Invalid default duration.")
 
         if (profile.schemaVersion != ExtractionProfile.CURRENT_SCHEMA_VERSION) {
             errors += ProfileValidationError(
@@ -34,7 +40,7 @@ class ProfileValidator {
         }
 
         profile.matchers.forEach { matcher ->
-            runCatching { Regex(matcher.regex) }.onFailure {
+            runCatching { SafePattern.compile(matcher.regex) }.onFailure {
                 errors += ProfileValidationError(
                     code = "invalid_matcher_regex",
                     message = "Invalid matcher regex.",
@@ -60,8 +66,8 @@ class ProfileValidator {
             }
 
             runCatching {
-                val regex = Regex(rule.regex)
-                val groups = regex.toPattern().matcher("").groupCount()
+                val regex = SafePattern.compile(rule.regex)
+                val groups = regex.matcher("").groupCount()
                 require(rule.group in 0..groups) { "Capture group does not exist." }
             }.onFailure {
                 errors += ProfileValidationError(
@@ -71,6 +77,13 @@ class ProfileValidator {
                 )
             }
 
+            rule.transforms.forEach { transform ->
+                if (transform is ValueTransform.RegexReplace && transform.regex.isNotEmpty()) {
+                    runCatching { SafePattern.compile(if (transform.literal) Regex.escape(transform.regex) else transform.regex) }.onFailure {
+                        errors += ProfileValidationError("invalid_transform_regex", "Unsupported transform regex.", rule.id)
+                    }
+                }
+            }
             availableVariables += rule.key
         }
 
@@ -80,3 +93,4 @@ class ProfileValidator {
     private fun duplicateIds(values: List<String>): Set<String> =
         values.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
 }
+

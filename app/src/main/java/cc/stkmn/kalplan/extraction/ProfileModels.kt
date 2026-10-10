@@ -75,7 +75,9 @@ data class ExtractionProfile(
     val parseDirection: ParseDirection = ParseDirection.TOP_DOWN,
     val defaultDurationMinutes: Int? = null,
     val locale: TemporalLocale = TemporalLocale.DE_DE,
-    val multipleDateMode: MultipleDateMode = MultipleDateMode.AUTO
+    val multipleDateMode: MultipleDateMode = MultipleDateMode.AUTO,
+    val acceptTemplate: String? = null,
+    val declineTemplate: String? = null
 ) {
     companion object {
         const val CURRENT_SCHEMA_VERSION = 1

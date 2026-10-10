@@ -65,7 +65,7 @@ class KalPlanExtractionPipelineTest {
         val input = ExtractionInput(
             sender = "planung@hospital.example",
             subject = "Medizin Auftrag",
-            body = "LWL Messung",
+            body = "Fiber inspection",
             receivedAt = Instant.parse("2026-10-07T08:00:00Z")
         )
         val rules = listOf(
@@ -82,16 +82,16 @@ class KalPlanExtractionPipelineTest {
                 regex = "\\bMedizin\\b"
             ),
             LabelRule(
-                id = "lwl",
-                label = RequestLabel("lwl", "LWL", priority = 10),
+                id = "fiber",
+                label = RequestLabel("fiber", "Fiber", priority = 10),
                 source = LabelRuleSource.BODY,
-                regex = "\\bLWL\\b"
+                regex = "\\bFiber\\b"
             )
         )
 
         val result = pipeline.extract(input, profile = null, labelRules = rules)
 
-        assertEquals(listOf("med", "hospital", "lwl"), result.labels.map { it.id })
+        assertEquals(listOf("med", "hospital", "fiber"), result.labels.map { it.id })
     }
 
     private fun structuredProfile() = ExtractionProfile(

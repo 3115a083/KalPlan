@@ -12,6 +12,15 @@ class FlexibleTemporalParserTest {
     private val parser = FlexibleTemporalParser()
 
     @Test
+    fun ambiguousAndNonexistentDstTimesNeedReview() {
+        listOf("2026-03-29", "2026-10-25").forEach { date ->
+            val result = parser.parse(dateText = date, timeText = "02:30", reference = reference)
+            assertEquals(null, result.candidates.single().start)
+            assertTrue(result.issues.any { it.code == "dst_time_ambiguous_or_invalid" && it.severity == IssueSeverity.NEEDS_REVIEW })
+        }
+    }
+
+    @Test
     fun parsesGermanDateAndRange() {
         val result = parser.parse(
             dateText = "14.12.2026",
@@ -87,3 +96,4 @@ class FlexibleTemporalParserTest {
         assertEquals(90, parser.parseDurationMinutes("90 Minuten"))
     }
 }
+

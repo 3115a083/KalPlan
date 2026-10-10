@@ -1,6 +1,12 @@
 package cc.stkmn.kalplan.extraction
 
 class MailTextNormalizer {
+    fun htmlToText(html: String): String = org.jsoup.Jsoup.parse(html.take(512_000)).apply {
+        select("script,style,iframe,object").remove()
+        select("br").append("\n")
+        select("p,div,tr,li").prepend("\n")
+    }.wholeText()
+
     fun normalize(input: ExtractionInput): ExtractionInput = input.copy(
         subject = normalizeText(input.subject, preserveNewlines = false),
         body = normalizeText(input.body, preserveNewlines = true)
@@ -36,3 +42,4 @@ class MailTextNormalizer {
         return text
     }
 }
+

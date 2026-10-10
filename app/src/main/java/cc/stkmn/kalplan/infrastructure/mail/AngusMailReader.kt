@@ -23,6 +23,34 @@ class AngusMailReader(
 ) : MailReader {
     private val mimeTextExtractor = MimeTextExtractor()
 
+    data class IncrementalBatch(val envelopes: List<MailEnvelope>, val cursor: String, val hasMore: Boolean)
+
+    suspend fun listIncremental(folder: MailFolderRef, cursor: String?, limit: Int): IncrementalBatch =
+        withConnectedStore(folder.accountId) { store ->
+            require(limit in 1..200)
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                val validity = uids.uidValidity
+                val old = cursor?.split(':')
+                val last = if (old?.getOrNull(0)?.toLongOrNull() == validity) old.getOrNull(1)?.toLongOrNull() else null
+                val candidates = if (last == null) {
+                    val count = mailFolder.messageCount
+                    if (count == 0) emptyArray() else mailFolder.getMessages((count - limit + 1).coerceAtLeast(1), count)
+                } else {
+                    // A bounded UID window avoids materializing the entire mailbox. Empty windows are advanced too.
+                    uids.getMessagesByUID(last + 1, last + limit)
+                }
+                prefetch(mailFolder, candidates)
+                val envelopes = candidates.map { it.toEnvelope(folder, uids, validity) }
+                val nextUid = (mailFolder as? org.eclipse.angus.mail.imap.IMAPFolder)?.uidNext ?: -1L
+                val checkpoint = if (last == null) candidates.maxOfOrNull { uids.getUID(it) } ?: 0L
+                    else minOf(last + limit, if (nextUid > 0) maxOf(last, nextUid - 1) else last + limit)
+                IncrementalBatch(envelopes, "$validity:$checkpoint", nextUid > checkpoint + 1)
+            } finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
+
     override suspend fun listFolders(accountId: String): List<MailFolderRef> =
         withConnectedStore(accountId) { store ->
             store.defaultFolder
@@ -76,6 +104,29 @@ class AngusMailReader(
         }
     }
 
+    data class BatchMessage(val envelope: MailEnvelope, val snapshot: MailMessageSnapshot?, val exceededLimits: Boolean = false)
+    suspend fun loadBatch(folder: MailFolderRef, envelopes: List<MailEnvelope>): List<BatchMessage> =
+        withConnectedStore(folder.accountId) { store ->
+            require(envelopes.size <= 200)
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                val keys = envelopes.map { StableImapKey.parse(it.stableId) }
+                require(keys.all { it.accountId == folder.accountId && it.folderPath == folder.path && it.uidValidity == uids.uidValidity })
+                val messages = uids.getMessagesByUID(keys.map { it.uid }.toLongArray())
+                prefetch(mailFolder, messages)
+                val byUid = messages.associateBy { uids.getUID(it) }
+                envelopes.mapIndexed { index, envelope ->
+                    val message = byUid[keys[index].uid] ?: error("Source changed during sync")
+                    try {
+                        val content = mimeTextExtractor.extract(message)
+                        BatchMessage(envelope, MailMessageSnapshot(envelope, content.plainText, content.htmlText, content.attachments))
+                    } catch (_: MimeLimitException) { BatchMessage(envelope, null, true) }
+                }
+            } finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
+
     override suspend fun loadMessage(
         folder: MailFolderRef,
         stableId: String
@@ -96,6 +147,7 @@ class AngusMailReader(
 
                 val message = uidFolder.getMessageByUID(key.uid)
                     ?: error("Message no longer exists on server")
+                prefetch(mailFolder, arrayOf(message))
                 val envelope = message.toEnvelope(folder, uidFolder, key.uidValidity)
                 val content = mimeTextExtractor.extract(message)
 
@@ -110,6 +162,42 @@ class AngusMailReader(
             }
         }
     }
+
+    suspend fun downloadAttachment(folder: MailFolderRef, stableId: String, path: String, output: java.io.File): Unit =
+        withConnectedStore(folder.accountId) { store ->
+            val key = StableImapKey.parse(stableId)
+            require(key.accountId == folder.accountId && key.folderPath == folder.path)
+            val segments = if (path.isBlank()) emptyList() else path.split('/').map { it.toInt() }
+            require(segments.size <= 16 && segments.all { it in 0..199 })
+            val mailFolder = store.getFolder(folder.path)
+            mailFolder.open(Folder.READ_ONLY)
+            try {
+                val uids = mailFolder as? UIDFolder ?: error("UID folder required")
+                require(uids.uidValidity == key.uidValidity)
+                var part: jakarta.mail.Part = uids.getMessageByUID(key.uid) ?: error("Source message unavailable")
+                MimeTextExtractor.validateWireSize(part)
+                for (index in segments) {
+                    val multipart = part.content as? jakarta.mail.Multipart ?: error("Attachment structure changed")
+                    require(index < multipart.count)
+                    part = multipart.getBodyPart(index)
+                }
+                require(part.size <= 10 * 1024 * 1024) { "Attachment size limit" }
+                part.inputStream.use { input ->
+                    output.outputStream().use { target ->
+                        var count = 0L
+                        val buffer = ByteArray(8192)
+                        while (true) {
+                            val n = input.read(buffer)
+                            if (n < 0) break
+                            count += n; require(count <= 10 * 1024 * 1024) { "Attachment size limit" }
+                            target.write(buffer, 0, n)
+                        }
+                    }
+                }
+            } catch (_: StackOverflowError) { output.delete(); throw MimeLimitException("Provider MIME recursion limit") }
+            catch (error: Exception) { output.delete(); throw error }
+            finally { if (mailFolder.isOpen) mailFolder.close(false) }
+        }
 
     private suspend fun <T> withConnectedStore(
         accountId: String,
@@ -133,12 +221,17 @@ class AngusMailReader(
 
     private fun prefetch(folder: Folder, messages: Array<Message>) {
         if (messages.isEmpty()) return
-        val profile = FetchProfile().apply {
-            add(FetchProfile.Item.ENVELOPE)
-            add(FetchProfile.Item.CONTENT_INFO)
+        val sizes = FetchProfile().apply {
+            add(FetchProfile.Item.SIZE)
             add(UIDFolder.FetchProfileItem.UID)
         }
-        folder.fetch(messages, profile)
+        folder.fetch(messages, sizes)
+        val safe = messages.filter { it.size in 0..MimeTextExtractor.MAX_WIRE_BYTES }.toTypedArray()
+        if (safe.isNotEmpty()) folder.fetch(safe, FetchProfile().apply {
+            add(FetchProfile.Item.ENVELOPE)
+            add("Message-ID")
+        })
+        // Do not eagerly fetch BODYSTRUCTURE. Bound each message before the provider parser runs.
     }
 
     private fun Message.toEnvelope(
@@ -148,6 +241,10 @@ class AngusMailReader(
     ): MailEnvelope {
         val uid = uidFolder.getUID(this)
         require(uid > 0) { "Server returned invalid message UID" }
+
+        if (size !in 0..MimeTextExtractor.MAX_WIRE_BYTES) return MailEnvelope(
+            StableImapKey(folder.accountId, folder.path, uidValidity, uid).encode(), null, "",
+            "Mail exceeds safe import size", Instant.EPOCH)
 
         val sender = from
             ?.firstOrNull()
@@ -165,10 +262,11 @@ class AngusMailReader(
                 uidValidity = uidValidity,
                 uid = uid
             ).encode(),
-            messageId = getHeader("Message-ID")?.firstOrNull(),
-            sender = sender,
-            subject = subject.orEmpty(),
-            receivedAt = received.toInstant()
+            messageId = getHeader("Message-ID")?.firstOrNull()?.takeIf { it.length <= 998 },
+            sender = sender.take(512),
+            subject = subject.orEmpty().take(2000),
+            receivedAt = received.toInstant(),
+            replyTo = replyTo?.firstOrNull()?.let { (it as? InternetAddress)?.address?.take(512) }
         )
     }
 }
@@ -200,3 +298,4 @@ internal data class StableImapKey(
         }
     }
 }
+

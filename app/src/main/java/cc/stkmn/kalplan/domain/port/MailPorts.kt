@@ -12,7 +12,8 @@ data class MailEnvelope(
     val messageId: String?,
     val sender: String,
     val subject: String,
-    val receivedAt: Instant
+    val receivedAt: Instant,
+    val replyTo: String? = null
 )
 
 data class MailAttachmentMeta(
@@ -21,7 +22,8 @@ data class MailAttachmentMeta(
     val sizeBytes: Int?,
     val disposition: String?,
     val contentId: String?,
-    val inline: Boolean
+    val inline: Boolean,
+    val partPath: String = ""
 )
 
 data class MailMessageSnapshot(
@@ -64,3 +66,4 @@ interface MailSender {
 interface OAuthTokenProvider {
     suspend fun accessToken(accountId: String): String
 }
+

@@ -175,13 +175,24 @@ class FlexibleTemporalParser {
                 }
             }
 
-            val start = parsedStartTime?.let { LocalDateTime.of(token.date, it).atZone(reference.zone) }
+            fun resolveTime(date: LocalDate, time: LocalTime): ZonedDateTime? {
+                val local = LocalDateTime.of(date, time)
+                val offsets = reference.zone.rules.getValidOffsets(local)
+                if (offsets.size != 1) {
+                    warnings += "dst_time_ambiguous_or_invalid"
+                    issues += ExtractionIssue("dst_time_ambiguous_or_invalid", "Daylight saving transition requires manual offset confirmation.", IssueSeverity.NEEDS_REVIEW)
+                    confidence = minOf(confidence, 0.4)
+                    return null
+                }
+                return ZonedDateTime.ofStrict(local, offsets.single(), reference.zone)
+            }
+            val start = parsedStartTime?.let { resolveTime(token.date, it) }
             val end = when {
                 start == null -> null
                 parsedEndTime != null && parsedStartTime != null -> {
                     var endDate = token.date
                     if (parsedEndTime.isBefore(parsedStartTime)) endDate = endDate.plusDays(1)
-                    LocalDateTime.of(endDate, parsedEndTime).atZone(reference.zone)
+                    resolveTime(endDate, parsedEndTime)
                 }
                 duration != null -> start.plusMinutes(duration.toLong())
                 else -> null
@@ -601,3 +612,4 @@ class FlexibleTemporalParser {
         else -> null
     }
 }
+

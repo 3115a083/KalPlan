@@ -14,13 +14,7 @@ class ProfileExtractionEngine {
             profile.enabled && profile.matchers.all { matcher ->
                 val source = sourceFor(input, matcher.source)
                 runCatching {
-                    Regex(
-                        matcher.regex,
-                        buildSet {
-                            add(RegexOption.MULTILINE)
-                            if (matcher.ignoreCase) add(RegexOption.IGNORE_CASE)
-                        }
-                    ).containsMatchIn(source)
+                    SafePattern.compile(matcher.regex, matcher.ignoreCase).matcher(source.take(512_000)).find()
                 }.getOrDefault(false)
             }
         }
@@ -63,7 +57,7 @@ class ProfileExtractionEngine {
                 issues += ExtractionIssue(
                     code = "invalid_rule",
                     message = "Extractor '" + rule.key + "' failed: " +
-                        (error.message ?: error::class.simpleName.orEmpty()),
+                        error::class.simpleName.orEmpty(),
                     severity = IssueSeverity.NEEDS_REVIEW,
                     fieldKey = rule.key
                 )
@@ -114,27 +108,32 @@ class ProfileExtractionEngine {
         rule: ExtractorRule,
         direction: ParseDirection
     ): ExtractOneResult? {
-        val regex = Regex(rule.regex, setOf(RegexOption.MULTILINE))
-        val match = when (direction) {
-            ParseDirection.TOP_DOWN -> regex.find(input)
-            ParseDirection.BOTTOM_UP -> regex.findAll(input).lastOrNull()
-        } ?: return null
-
-        require(rule.group in match.groupValues.indices) {
-            "Capture group " + rule.group + " does not exist"
+        val matcher = SafePattern.compile(rule.regex).matcher(input.take(512_000))
+        var found = false
+        var captured: String? = null
+        var matched = ""
+        var start = 0
+        var end = 0
+        while (matcher.find()) {
+            require(rule.group in 0..matcher.groupCount()) { "Capture group does not exist" }
+            captured = matcher.group(rule.group)
+            matched = matcher.group()
+            start = matcher.start(rule.group)
+            end = matcher.end(rule.group)
+            found = true
+            if (direction == ParseDirection.TOP_DOWN) break
         }
-
-        val group = match.groups[rule.group] ?: return null
-        var value = group.value
-        for (transform in rule.transforms) {
-            value = applyTransform(value, transform)
+        if (!found || captured == null) return null
+        var value = captured
+        for (transform in rule.transforms) value = applyTransform(requireNotNull(value), transform).also {
+            require(it.length <= 512_000) { "Transform output limit" }
         }
 
         return ExtractOneResult(
-            value = value,
-            matchedText = match.value,
-            startIndex = group.range.first,
-            endIndexExclusive = group.range.last + 1
+            value = requireNotNull(value),
+            matchedText = matched,
+            startIndex = start,
+            endIndexExclusive = end
         )
     }
 
@@ -149,9 +148,8 @@ class ProfileExtractionEngine {
         is ValueTransform.RegexReplace -> {
             if (transform.regex.isEmpty()) value
             else {
-                val options = if (transform.ignoreCase) setOf(RegexOption.IGNORE_CASE) else emptySet()
                 val pattern = if (transform.literal) Regex.escape(transform.regex) else transform.regex
-                Regex(pattern, options).replace(value, transform.replacement)
+                SafePattern.compile(pattern, transform.ignoreCase).matcher(value).replaceAll(transform.replacement)
             }
         }
     }
@@ -171,3 +169,4 @@ class ProfileExtractionEngine {
         InputSource.SENDER -> input.sender
     }
 }
+
