@@ -301,7 +301,7 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
     val profileId = state.accounts.firstOrNull { it.id == request.accountId }?.folderProfiles?.get(request.folder)
     val profile = state.profiles.firstOrNull { it.id == profileId && it.enabled }
     val defaultBody = (if (accept) profile?.acceptTemplate?.takeIf { it.isNotBlank() } ?: settings.acceptTemplate else profile?.declineTemplate?.takeIf { it.isNotBlank() } ?: settings.declineTemplate)
-        .replace("{date}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().toString() }.orEmpty())
+        .replace("{date}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.SHORT).withLocale(LocalConfiguration.current.locales[0])) }.orEmpty())
         .replace("{time}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().toString() }.orEmpty())
         .replace("{subject}", request.subject).replace("{sender}", request.sender)
     var body by rememberSaveable(request.id, accept) { mutableStateOf(defaultBody) }

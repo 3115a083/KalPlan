@@ -248,11 +248,23 @@ private fun SettingsGroup(icon: androidx.compose.ui.graphics.vector.ImageVector,
 }
 
 @Composable private fun ThemePicker(selected: String, onSelect: (String) -> Unit) {
-    val themes = listOf("MATERIAL_YOU" to Color(0xFF6750A4), "KALPLAN" to Color(0xFF4F52C9), "NEUTRAL_BUSINESS" to Color(0xFF4D5D6C), "TURQUOISE" to Color(0xFF006B62), "HIGH_CONTRAST" to Color(0xFF111111))
+    val themes = listOf(
+        "MATERIAL_YOU" to listOf(Color(0xFF6750A4), Color(0xFFEADDFF), Color(0xFFFFFBFE)),
+        "KALPLAN" to listOf(Color(0xFF4F52C9), Color(0xFF167B72), Color(0xFFF3F2FA)),
+        "NEUTRAL_BUSINESS" to listOf(Color(0xFF4D5D6C), Color(0xFFD3E3F2), Color(0xFFF0F3F5)),
+        "TURQUOISE" to listOf(Color(0xFF006B62), Color(0xFF9EF2E6), Color(0xFFECF5F2)),
+        "HIGH_CONTRAST" to listOf(Color(0xFF111111), Color(0xFF005A9C), Color.White)
+    )
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        themes.forEach { (name, color) ->
+        themes.forEach { (name, colors) ->
             Surface(modifier = Modifier.width(112.dp).clickable { onSelect(name) }, shape = RoundedCornerShape(16.dp), border = BorderStroke(if (selected == name) 2.dp else 1.dp, if (selected == name) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant), color = MaterialTheme.colorScheme.surface) {
-                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) { Box(Modifier.fillMaxWidth().height(34.dp).background(color, RoundedCornerShape(10.dp))); Text(themeName(name), style = MaterialTheme.typography.labelMedium) }
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth().height(40.dp).background(colors[2], RoundedCornerShape(10.dp)).padding(6.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.Bottom) {
+                        Box(Modifier.weight(1f).fillMaxHeight().background(colors[1], RoundedCornerShape(6.dp)))
+                        Box(Modifier.size(20.dp).background(colors[0], RoundedCornerShape(7.dp)))
+                    }
+                    Text(themeName(name), style = MaterialTheme.typography.labelMedium)
+                }
             }
         }
     }
