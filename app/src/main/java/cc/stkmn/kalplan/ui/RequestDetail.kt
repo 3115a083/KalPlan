@@ -168,9 +168,9 @@ private fun MailHeader(label: String, value: String) {
 
 @Composable
 private fun ActionIconButton(label: String, background: Color, foreground: Color, icon: ImageVector, enabled: Boolean, onClick: () -> Unit) {
-    Column(horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Column(Modifier.clickable(enabled = enabled, onClick = onClick).padding(4.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Surface(shape = RoundedCornerShape(18.dp), color = background, contentColor = foreground) {
-            IconButton(enabled = enabled, onClick = onClick, modifier = Modifier.size(54.dp)) { Icon(icon, label) }
+            Box(Modifier.size(54.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { Icon(icon, label) }
         }
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
