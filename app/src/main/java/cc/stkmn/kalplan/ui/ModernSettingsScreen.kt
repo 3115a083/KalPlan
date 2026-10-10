@@ -12,6 +12,7 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -61,14 +62,16 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     var lastTap by remember { mutableLongStateOf(0L) }
     var feedback by remember { mutableStateOf("") }
     var calendars by remember { mutableStateOf(emptyList<CalendarRef>()) }
+    val listState = rememberLazyListState()
     fun updateSettings(change: (Settings) -> Settings) = onRun { repository.update { it.copy(settings = change(it.settings)) } }
     val readCalendar = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) onRun { calendars = AndroidCalendarReader(context).calendars() }
     }
     val notifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     LaunchedEffect(Unit) { calendars = runCatching { AndroidCalendarReader(context).calendars() }.getOrDefault(emptyList()) }
+    LaunchedEffect(focusMail) { if (focusMail) listState.scrollToItem(2) }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState, contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 80.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text(tr("Einstellungen", "Settings"), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         }
