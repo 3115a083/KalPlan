@@ -18,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import cc.stkmn.kalplan.data.AppRepository
 import cc.stkmn.kalplan.ui.generateDebugCases
 
@@ -80,8 +81,11 @@ class AppSmokeTest {
             compose.onNodeWithTag("request-list").performTouchInput { swipeDown() }
             compose.waitUntil(15_000) { compose.onAllNodesWithTag("manual-sync-status").fetchSemanticsNodes().isNotEmpty() }
             compose.onNodeWithContentDescription("Sync").assertIsNotEnabled()
+            val activeWorkIds = runBlocking { cc.stkmn.kalplan.infrastructure.sync.SyncScheduler.manualStates(context).first().filter { !it.state.isFinished }.map { it.id } }
+            org.junit.Assert.assertEquals(1, activeWorkIds.size)
             compose.onNodeWithTag("request-list").performTouchInput { swipeDown() }
             screenshot("pull-to-refresh")
+            org.junit.Assert.assertEquals(activeWorkIds, runBlocking { cc.stkmn.kalplan.infrastructure.sync.SyncScheduler.manualStates(context).first().filter { !it.state.isFinished }.map { it.id } })
         } finally { refreshRepository.syncMutex.unlock() }
         compose.waitUntil(15_000) { (refreshRepository.data.value.lastSyncMillis ?: 0L) > previousSync }
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("manual-sync-status").fetchSemanticsNodes().isEmpty() }
