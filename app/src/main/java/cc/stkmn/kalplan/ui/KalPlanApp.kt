@@ -19,6 +19,7 @@ import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
@@ -59,6 +60,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
     var menu by remember { mutableStateOf(false) }
     var settingsFocus by rememberSaveable { mutableStateOf(0) }
     val planner = remember { Planner(context, repository) }
+    val sectionState = rememberSaveableStateHolder()
     fun run(action: suspend () -> Unit) {
         if (busy || !ready) return
         scope.launch {
@@ -83,7 +85,13 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
     CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
     KalPlanTheme(choice = theme, darkTheme = dark, primaryHex = state.settings.primaryHex) {
         val request = state.requests.firstOrNull { it.id == selected }
-        BackHandler(selected != null || section == "SWIPE") { if (replyAction != null) replyAction = null else { selected = null; section = "REQUESTS" } }
+        BackHandler(selected != null || section == "SWIPE") {
+            when {
+                replyAction != null -> replyAction = null
+                selected != null -> selected = null
+                else -> section = "REQUESTS"
+            }
+        }
         Scaffold(
             topBar = {
                 TopAppBar(title = { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -124,15 +132,15 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                     } else when (section) {
                         "SETTINGS" -> key(settingsFocus) { SettingsScreen(state, repository, busy, ::run, focusMail = settingsFocus > 0) }
                         "CALENDAR" -> CalendarScreen(state, repository, planner, onOpen = { selected = it })
-                        "SWIPE" -> SwipeScreen(state, planner, onOpen = { selected = it }, onAction = { id, action -> selected = id; replyAction = action },
-                            onLater = { id -> run { repository.request(id) { it.copy(status = "LATER") } } }, onUnclear = { id -> run { repository.request(id) { it.copy(status = "UNCLEAR", unclear = true) } } }, onClose = { section = "REQUESTS" })
+                        "SWIPE" -> sectionState.SaveableStateProvider("SWIPE") { SwipeScreen(state, planner, onOpen = { selected = it }, onAction = { id, action -> selected = id; replyAction = action },
+                            onLater = { id -> run { repository.request(id) { it.copy(status = "LATER") } } }, onUnclear = { id -> run { repository.request(id) { it.copy(status = "UNCLEAR", unclear = true) } } }, onClose = { section = "REQUESTS" }) }
                         else -> {
                             Box(Modifier.padding(horizontal = 16.dp)) {
                                 ChoiceRow(listOf("OPEN", "HISTORY", "SWIPE"), if (showHistory) "HISTORY" else "OPEN", label = { when (it) { "HISTORY" -> tr("Verlauf", "History"); "SWIPE" -> tr("Swipe", "Swipe"); else -> tr("Liste", "List") } }) { choice ->
                                     when (choice) { "HISTORY" -> showHistory = true; "SWIPE" -> section = "SWIPE"; else -> showHistory = false }
                                 }
                             }
-                            OutlinedTextField(search, { search = it }, label = { Text(tr("Suchen", "Search")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true)
+                            StableTextField(search, { search = it }, label = { Text(tr("Suchen", "Search")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true)
                             val requests = state.requests.filter {
                                 (if (showHistory) !it.pending else it.pending) && (section != "UNCLEAR" || it.unclear) &&
                                     (search.isBlank() || (it.subject + it.sender + it.labels.joinToString()).contains(search, true))
@@ -192,6 +200,8 @@ fun RequestCard(request: StoredRequest, state: AppData, planner: Planner, onClic
                 Text(request.subject, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
                 LabelChips(request.labels, settings.labels)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    AppointmentKindIcon(request.candidate?.location, request.candidate?.mode, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
                     Text(if (request.candidate?.mode == "ONLINE") tr("Online", "Online") else request.candidate?.location.orEmpty().ifBlank { request.sender }, maxLines = 1, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                     if (settings.value.enabled && request.candidate != null) Text("≈ " + String.format(androidx.compose.ui.platform.LocalConfiguration.current.locales[0], "%.2f €", PlanningPolicy.value(request.candidate!!, request.travelMinutes, request.distanceKm, PlanningPolicy.valueSettings(request, settings)).totalCents / 100.0), fontWeight = FontWeight.SemiBold)
                 }

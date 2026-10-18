@@ -16,11 +16,12 @@ class DeviceRunVerificationTest(unittest.TestCase):
     def test_requires_both_tests(self):
         self.assertNotEqual(0, self.verify("OK (1 test)"))
         self.assertNotEqual(0, self.verify("OK (0 tests)"))
-        self.assertEqual(0, self.verify("OK (2 tests)"))
+        self.assertNotEqual(0, self.verify("OK (2 tests)"))
+        self.assertEqual(0, self.verify("OK (5 tests)"))
 
     def test_rejects_failure_even_with_success_summary(self):
         for failure in ("FAILURES!!!", "INSTRUMENTATION_FAILED", "Process crashed", "shortMsg=crash"):
-            self.assertNotEqual(0, self.verify("OK (2 tests)\n" + failure))
+            self.assertNotEqual(0, self.verify("OK (5 tests)\n" + failure))
 
 
 if __name__ == "__main__":

@@ -168,12 +168,20 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 NumberSetting(tr("Puffer davor", "Buffer before"), state.settings.beforeBuffer, tr("Minuten", "minutes"), 0..1440) { value -> updateSettings { it.copy(beforeBuffer = value) } }
                 NumberSetting(tr("Puffer danach", "Buffer after"), state.settings.afterBuffer, tr("Minuten", "minutes"), 0..1440) { value -> updateSettings { it.copy(afterBuffer = value) } }
                 TextSetting(tr("Standard-Ort", "Default place"), state.settings.originName) { value -> updateSettings { it.copy(originName = value) } }
-                TextSetting(tr("Adresse", "Address"), state.settings.originAddress) { value -> updateSettings { it.copy(originAddress = value) } }
+                AddressSetting(tr("Adresse", "Address"), state.settings.originAddress) { value -> updateSettings { it.copy(originAddress = value) } }
+                ToggleRow(tr("Adressvorschläge über Photon", "Address suggestions via Photon"), state.settings.addressSuggestionsEnabled) { enabled -> updateSettings { it.copy(addressSuggestionsEnabled = enabled) } }
+                Text(tr("Suchtext wird an photon.komoot.io übertragen. Ab 3 Zeichen, mit Tipp-Pause, Zwischenspeicher und hartem Tageslimit. Keine Routenabfrage.", "Search text is sent to photon.komoot.io. At least 3 characters, typing delay, cache and hard daily limit. No routing request."), style = MaterialTheme.typography.bodySmall)
+                NumberSetting(tr("Adressvorschläge: Tageslimit", "Address suggestions: daily limit"), state.settings.addressDailyLimit, tr("Abfragen", "queries"), 0..1000) { limit -> updateSettings { it.copy(addressDailyLimit = limit) } }
                 SettingItem(tr("Fahrtsuche-API", "Routing API"), state.settings.routingProvider + " · " + tr("Limit", "limit") + " ${state.settings.routingDailyLimit}/Tag", onClick = { routingOpen = true })
                 ChoiceRow(listOf("IGNORE", "RELEVANT", "ALL"), state.settings.attachments, label = { attachmentChoiceName(it) }) { value -> updateSettings { it.copy(attachments = value) } }
                 state.settings.attachmentRules.forEachIndexed { index, rule -> SettingItem(ruleSummary(rule), tr("Erste passende Regel gilt", "First matching rule wins"), onClick = { attachmentEdit = index to rule }) }
                 OutlinedButton(onClick = { newAttachment = true }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Anhangregel", "Attachment rule")) }
                 if (Build.VERSION.SDK_INT >= 33) OutlinedButton(onClick = { notifications.launch(Manifest.permission.POST_NOTIFICATIONS) }) { Text(tr("Benachrichtigungen erlauben", "Allow notifications")) }
+            }
+        }
+        item {
+            SettingsGroup(Icons.Outlined.Save, tr("Sicherung und Gerätewechsel", "Backup and device transfer"), tr("Benutzerdaten exportieren und importieren", "Export and import user data")) {
+                BackupSettings(repository, busy, onRun)
             }
         }
         item {
@@ -278,10 +286,11 @@ private fun SettingsGroup(icon: androidx.compose.ui.graphics.vector.ImageVector,
 @Composable private fun brightnessName(value: String): String = when(value) { "LIGHT" -> tr("Hell", "Light"); "DARK" -> tr("Dunkel", "Dark"); else -> tr("Gerät", "Device") }
 @Composable private fun attachmentChoiceName(value: String): String = when(value) { "IGNORE" -> tr("Keine", "None"); "ALL" -> tr("Alle", "All"); else -> tr("Relevante", "Relevant") }
 private fun parseColor(hex: String): Color = runCatching { Color(android.graphics.Color.parseColor("#${hex.removePrefix("#")}")) }.getOrDefault(Color(0xFF6750A4))
-private fun labelSummary(label: LabelPolicy): String = (label.keywords.joinToString().ifBlank { label.senderContains }).take(90)
+private fun labelSummary(label: LabelPolicy): String = if (label.conditionGroups.isNotEmpty()) label.conditionGroups.joinToString(" ODER ") { g -> g.conditions.joinToString(" UND ") { it.text } }.take(140) else (label.keywords.joinToString().ifBlank { label.senderContains }).take(90)
 private fun valueSummary(v: ValueSettings): String = "${v.workCentsPerHour / 100.0} €/h · Fahrt ${v.travelCentsPerHour / 100.0} €/h · ${v.centsPerKm / 100.0} €/km · ${v.flatCents / 100.0} €"
 private fun flatFeeSummary(v: FlatFeePreset): String = buildList {
-    if (v.flatCents > 0) add("${v.flatCents / 100.0} € pro Auftrag")
+    add(when(v.appliesTo) { "WORK" -> "Arbeitszeit"; "TRAVEL" -> "Fahrtzeit"; else -> "Auftrag" } + if (v.replacesHourly && v.appliesTo != "ORDER") " statt Stundensatz" else " zusätzlich")
+    if (v.flatCents > 0) add("${v.flatCents / 100.0} €")
     v.distanceBands.sortedBy { it.upToKm }.forEach { add("bis ${it.upToKm.toInt()} km: ${it.cents / 100.0} €") }
 }.joinToString(" · ")
 @Composable private fun calendarSummary(p: CalendarPrivacy): String = if (!p.included) tr("Aus", "Off") else listOfNotNull(if (p.showTitle) tr("Titel", "title") else null, if (p.showLocation) tr("Ort", "location") else null, if (p.showDescription) tr("Beschreibung", "description") else null, if (p.travelCalendar) tr("Fahrten", "travel") else null).joinToString(" · ")

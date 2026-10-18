@@ -72,6 +72,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(appointmentTime(c), fontWeight = FontWeight.SemiBold)
                                 Text(if (c.assumed) "~${c.durationMinutes} min." else "${c.durationMinutes} min.")
+                                AppointmentKindIcon(c.location, c.mode, Modifier.size(20.dp))
                                 Text(if (c.mode == "ONLINE") tr("Online · Arbeitsort: ", "Online · Work location: ") + state.settings.originAddress else c.location.ifBlank { tr("Ort fehlt", "Location missing") })
                                 Text(tr("Konfidenz", "Confidence") + ": ${(c.confidence * 100).toInt()}% · ${c.relation}", style = MaterialTheme.typography.bodySmall)
                                 if (i == request.selectedCandidate) Text(tr("Ausgewählt", "Selected"), color = MaterialTheme.colorScheme.primary)
@@ -201,7 +202,7 @@ private fun EditCandidateDialog(request: StoredRequest, policies: List<LabelPoli
             EditField(tr("Uhrzeit (HH:MM)", "Time (HH:MM)"), time) { time = it }
             EditField(tr("UTC-Offset bei Zeitumstellung, z. B. +02:00. Sonst leer.", "UTC offset for DST overlap, e.g. +02:00. Otherwise empty."), offsetText) { offsetText = it }
             EditField(tr("Dauer in Minuten", "Duration in minutes"), duration) { duration = it }
-            EditField(tr("Ort", "Location"), location) { location = it }
+            AddressField(tr("Ort", "Location"), location) { location = it }
             ToggleRow(tr("Online", "Online"), online) { online = it }
             Text(tr("Labels", "Labels"), style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -318,7 +319,7 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
         if (settings.debug) Text(tr("Debug: Versand nur an Testadresse. Kalenderwrites werden simuliert.", "Debug: only the test address can receive mail. Calendar writes are simulated."), color = MaterialTheme.colorScheme.error)
         if (request.accountId.isBlank() && !request.demo) Text(tr("Dieser lokale Import hat keine Quellmail. Du kannst den Text für eine manuelle Antwort kopieren.", "This local import has no source email. Copy the text for a manual reply."))
         if (!simulation && (configuredAccount == null || !configuredAccount.smtpEnabled)) Button(onClick = onSetupMail) { Text(tr("Nachricht einrichten", "Set up email")) }
-        OutlinedTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
+        StableTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
         state.accounts.firstOrNull { it.id == request.accountId }?.signature?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (accept) Text(tr("Nach Versand: wartet auf Rückmeldung. Eine optionale Reservierung ist kein bestätigter Auftrag.", "After sending: waiting for response. An optional reservation is not a confirmed booking."))
         val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -355,7 +356,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
     var dCoordinates by rememberSaveable { mutableStateOf("") }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Fahrtzeit manuell", "Manual travel check")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EditField(tr("Startort", "Origin"), origin) { origin = it }
+            AddressField(tr("Startort", "Origin"), origin) { origin = it }
             Text(tr("Ziel: ", "Destination: ") + destination.ifBlank { tr("Fehlt. Zuerst Termindetails korrigieren.", "Missing. Correct appointment details first.") })
             Text(tr("Karte öffnen überträgt die beiden Adressen an Google Maps.", "Opening the map sends both addresses to Google Maps."), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(enabled = origin.isNotBlank() && destination.isNotBlank(), onClick = {
@@ -385,7 +386,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
                 }
             }) { Text(tr("Grobe Offline-Näherung aus Koordinaten", "Coarse offline estimate from coordinates")) }
             Text(tr("Die Offline-Näherung kennt keine Straßen oder Hindernisse. Prüfe die Fahrt selbst.", "The offline estimate does not know roads or obstacles. Review the trip yourself."), style = MaterialTheme.typography.bodySmall)
-            EditField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
+            AddressField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
             EditField(tr("Fahrtminuten zum Folgetermin", "Travel minutes to following appointment"), afterMinutes) { afterMinutes = it }
         }
     }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis(),

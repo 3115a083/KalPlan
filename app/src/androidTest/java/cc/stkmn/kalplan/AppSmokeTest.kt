@@ -1,6 +1,9 @@
 package cc.stkmn.kalplan
 
 import androidx.compose.ui.test.*
+import androidx.activity.compose.setContent
+import androidx.compose.ui.text.TextRange
+import androidx.test.espresso.Espresso.pressBack
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -15,6 +18,72 @@ import cc.stkmn.kalplan.ui.generateDebugCases
 @RunWith(AndroidJUnit4::class)
 class AppSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @Test fun inputEditsKeepCaretAndCommitOnlyOnApply() {
+        var saved = ""
+        var commits = 0
+        compose.activity.runOnUiThread { compose.activity.setContent {
+            cc.stkmn.kalplan.ui.theme.KalPlanTheme {
+                cc.stkmn.kalplan.ui.TextSetting("Stable input", "") { saved = it; commits++ }
+            }
+        } }
+        compose.onNodeWithText("Stable input").performClick()
+        val field = compose.onNode(hasSetTextAction())
+        for (character in "Alpha") field.performTextInput(character.toString())
+        field.performTextInputSelection(TextRange(2))
+        for (character in "XYZ") field.performTextInput(character.toString())
+        field.assertTextEquals("AlXYZpha")
+        org.junit.Assert.assertEquals(0, commits)
+        compose.onNodeWithText("Apply").performClick()
+        org.junit.Assert.assertEquals("AlXYZpha", saved)
+        org.junit.Assert.assertEquals(1, commits)
+    }
+    @Test fun encryptedBackupRestoreKeepsCredentialsAndSendFences() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        runBlocking {
+            val repository = AppRepository.get(context); repository.load()
+            val original = repository.backup(true)
+            try {
+                val account = cc.stkmn.kalplan.data.MailAccount("backup-account", "Backup", "test", "", "imap.example.invalid", smtpHost = "", smtpEnabled = false, enabled = false)
+                repository.saveAccount(account, "synthetic-test-password", "")
+                val request = cc.stkmn.kalplan.data.StoredRequest("backup-fenced", sender = "", subject = "", body = "", receivedMillis = 0)
+                repository.update { it.copy(requests = listOf(request)) }
+                val source = repository.backup(true)
+                val pass = "synthetic-backup-password".toCharArray()
+                val decoded = cc.stkmn.kalplan.infrastructure.backup.PortableBackup.decode(cc.stkmn.kalplan.infrastructure.backup.PortableBackup.encode(source, pass), pass)
+                repository.request(request.id) { it.copy(status = "DELIVERY_UNKNOWN", replyId = "<synthetic@test.invalid>") }
+                repository.restore(decoded)
+                org.junit.Assert.assertEquals("synthetic-test-password", repository.secret(account.id))
+                org.junit.Assert.assertEquals("DELIVERY_UNKNOWN", repository.data.value.requests.single().status)
+                org.junit.Assert.assertFalse(repository.data.value.accounts.first { it.id == account.id }.enabled)
+            } finally { repository.restore(original) }
+        }
+    }
+    @Test fun swipeDetailBackReturnsToSameSwipeAndMonthCanJumpYears() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        runBlocking {
+            val r = AppRepository.get(context); r.load()
+            r.update { it.copy(settings = it.settings.copy(debug = true, language = "EN")) }
+            generateDebugCases(context, r)
+        }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Swipe").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Swipe").performClick()
+        compose.onNodeWithText("All details and source mail").performScrollTo().performClick()
+        compose.onNodeWithText("Info").assertExists()
+        pressBack()
+        compose.onNodeWithText("All details and source mail").assertExists()
+        screenshot("swipe-rich-card")
+        pressBack()
+        compose.onNodeWithText("Your requests").assertExists()
+        compose.onNodeWithText("Calendar").performClick()
+        compose.onNodeWithText("Day").performClick()
+        compose.onNodeWithText("Month", substring = false).performClick()
+        val header = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("MMMM yyyy", java.util.Locale.US))
+        compose.onNodeWithText(header).performClick()
+        compose.onNodeWithText("Year").performTextReplacement("2030")
+        compose.onNodeWithText("Mar", substring = false).performClick()
+        compose.onNodeWithText("March 2030").assertExists()
+        screenshot("month-year-navigation")
+    }
     @Test fun guidedProfileKeepsBothReplyTemplatesAfterSaving() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val repository = AppRepository.get(context)

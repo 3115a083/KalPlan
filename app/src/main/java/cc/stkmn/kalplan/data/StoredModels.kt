@@ -47,6 +47,7 @@ data class CalendarPrivacy(
     val showDescription: Boolean = false,
     val useHiddenLocationForRouting: Boolean = false,
     val travelCalendar: Boolean = false,
+    val colorHex: String = "",
     val travelTitleContains: String = ""
 )
 
@@ -56,6 +57,7 @@ data class ValueOverride(
     val travelCentsPerHour: Long? = null,
     val centsPerKm: Long? = null,
     val flatCents: Long? = null,
+    val flatFeePresetIds: List<String>? = null,
     val flatFeePresetId: String? = null,
     val billingStepMinutes: Int? = null,
     val roundUp: Boolean? = null,
@@ -78,6 +80,7 @@ data class LabelPolicy(
     val colorHex: String = "6750A4",
     val keywordMode: String = "ANY",
     val searchIn: String = "SUBJECT_AND_BODY",
+    val conditionGroups: List<LabelConditionGroup> = emptyList(),
     val valueOverride: ValueOverride? = null
 )
 
@@ -90,9 +93,11 @@ data class ValueSettings(
     val travelCentsPerHour: Long = 0,
     val centsPerKm: Long = 42,
     val flatCents: Long = 0,
+    val flatFeePresetIds: List<String> = emptyList(),
     val flatFeePresetId: String = "",
     val roundTrip: Boolean = false,
     val distanceBands: List<DistanceBand> = emptyList(),
+    val flatFeeComponents: List<FlatFeePreset> = emptyList(),
     val roundingMode: String = "UP"
 )
 @Serializable
@@ -103,7 +108,9 @@ data class FlatFeePreset(
     val id: String,
     val name: String,
     val flatCents: Long = 0,
-    val distanceBands: List<DistanceBand> = emptyList()
+    val distanceBands: List<DistanceBand> = emptyList(),
+    val appliesTo: String = "ORDER",
+    val replacesHourly: Boolean = false
 )
 
 @Serializable
@@ -139,6 +146,8 @@ data class Settings(
     val showInlineMailImages: Boolean = false,
     val routingProvider: String = "GOOGLE_MAPS",
     val routingDailyLimit: Int = 10,
+    val addressSuggestionsEnabled: Boolean = false,
+    val addressDailyLimit: Int = 30,
     val debug: Boolean = false,
     val debugTestAddress: String = "",
     val debugSendToTest: Boolean = false,
@@ -217,3 +226,8 @@ data class AppData(
     val lastSyncMillis: Long? = null,
     val diagnostics: List<String> = emptyList()
 )
+
+@Serializable
+data class LabelCondition(val field: String = "BODY", val text: String, val operator: String = "CONTAINS")
+@Serializable
+data class LabelConditionGroup(val conditions: List<LabelCondition> = emptyList())
