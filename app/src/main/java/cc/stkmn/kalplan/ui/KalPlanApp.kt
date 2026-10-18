@@ -17,6 +17,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.ui.platform.testTag
+import androidx.work.WorkInfo
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -61,6 +64,12 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
     var settingsFocus by rememberSaveable { mutableStateOf(0) }
     val planner = remember { Planner(context, repository) }
     val sectionState = rememberSaveableStateHolder()
+    val manualWork by remember(context) { SyncScheduler.manualStates(context) }.collectAsState(initial = emptyList())
+    val refreshPending = manualWork.any { !it.state.isFinished }
+    val refreshRunning = manualWork.any { it.state == WorkInfo.State.RUNNING }
+    fun refresh() {
+        if (ready && !busy && !refreshPending) SyncScheduler.manual(context)
+    }
     fun run(action: suspend () -> Unit) {
         if (busy || !ready) return
         scope.launch {
@@ -103,7 +112,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                     if (selected != null) IconButton(onClick = { replyAction = null; selected = null }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, tr("Zurück", "Back")) }
                 }, actions = {
                     if (selected == null) {
-                        IconButton(enabled = ready && !busy, onClick = { SyncScheduler.manual(context); Toast.makeText(context, "Sync angefordert / Sync requested", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Outlined.Sync, tr("Synchronisieren", "Sync")) }
+                        IconButton(enabled = ready && !busy && !refreshPending, onClick = { refresh(); Toast.makeText(context, "Sync angefordert / Sync requested", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Outlined.Sync, tr("Synchronisieren", "Sync")) }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, tr("Menü", "Menu")) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text(tr("Swipe-Ansicht", "Swipe view")) }, onClick = { section = "SWIPE"; menu = false })
@@ -145,7 +154,11 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                                 (if (showHistory) !it.pending else it.pending) && (section != "UNCLEAR" || it.unclear) &&
                                     (search.isBlank() || (it.subject + it.sender + it.labels.joinToString()).contains(search, true))
                             }.sortedByDescending { PlanningPolicy.priority(it, state.settings).score }
-                            LazyColumn(contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (refreshPending) Text(
+                                if (refreshRunning) tr("Anfragen werden aktualisiert …", "Updating requests…") else tr("Aktualisierung eingeplant. Wartet auf Verbindung oder nächsten Versuch.", "Update queued. Waiting for a connection or retry."),
+                                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("manual-sync-status"), style = MaterialTheme.typography.bodySmall)
+                            PullToRefreshBox(isRefreshing = refreshPending, onRefresh = ::refresh, modifier = Modifier.weight(1f).fillMaxWidth()) {
+                            LazyColumn(Modifier.fillMaxSize().testTag("request-list"), contentPadding = PaddingValues(16.dp, 8.dp, 16.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 item { Text(if (showHistory) tr("Verlauf", "History") else if (section == "UNCLEAR") tr("Angaben prüfen", "Review details") else tr("Deine Anfragen", "Your requests"), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold) }
                                 if (requests.isEmpty()) item {
                                     Card { Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -155,6 +168,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                                     } }
                                 }
                                 items(requests, key = { it.id }) { r -> RequestCard(r, state, planner, onClick = { selected = r.id }) }
+                            }
                             }
                         }
                     }

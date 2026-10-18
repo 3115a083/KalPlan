@@ -68,10 +68,23 @@ class AppSmokeTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         runBlocking {
             val r = AppRepository.get(context); r.load()
-            r.update { it.copy(settings = it.settings.copy(debug = true, language = "EN")) }
+            r.update { it.copy(accounts = it.accounts.map { account -> account.copy(enabled = false) }, settings = it.settings.copy(debug = true, language = "EN", syncMinutes = 0)) }
             generateDebugCases(context, r)
         }
         compose.waitUntil(15_000) { compose.onAllNodesWithText("Swipe").fetchSemanticsNodes().isNotEmpty() }
+        val refreshRepository = AppRepository.get(context)
+        val previousSync = refreshRepository.data.value.lastSyncMillis ?: 0L
+        // Keep the real worker running long enough to verify its UI state and duplicate protection.
+        runBlocking { refreshRepository.syncMutex.lock() }
+        try {
+            compose.onNodeWithTag("request-list").performTouchInput { swipeDown() }
+            compose.waitUntil(15_000) { compose.onAllNodesWithTag("manual-sync-status").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithContentDescription("Sync").assertIsNotEnabled()
+            compose.onNodeWithTag("request-list").performTouchInput { swipeDown() }
+            screenshot("pull-to-refresh")
+        } finally { refreshRepository.syncMutex.unlock() }
+        compose.waitUntil(15_000) { (refreshRepository.data.value.lastSyncMillis ?: 0L) > previousSync }
+        compose.waitUntil(15_000) { compose.onAllNodesWithTag("manual-sync-status").fetchSemanticsNodes().isEmpty() }
         compose.onNodeWithText("Swipe").performClick()
         compose.onNodeWithText("All details and source mail").performScrollTo().performClick()
         compose.onNodeWithText("Info").assertExists()

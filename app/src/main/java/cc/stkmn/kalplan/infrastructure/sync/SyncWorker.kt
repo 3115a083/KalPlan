@@ -90,6 +90,8 @@ class SyncWorker(context: Context, parameters: WorkerParameters) : CoroutineWork
     }
 }
 object SyncScheduler {
+    private const val MANUAL_WORK_NAME = "kalplan-manual"
+    fun manualStates(context: Context) = WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow(MANUAL_WORK_NAME)
     private val constraints = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
     fun configure(context: Context, minutes: Int) {
         val manager = WorkManager.getInstance(context)
@@ -106,7 +108,7 @@ object SyncScheduler {
             OneTimeWorkRequestBuilder<SyncWorker>().setInputData(workDataOf("frequent" to true)).setInitialDelay(minutes.toLong(), TimeUnit.MINUTES)
                 .setConstraints(constraints).setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS).build())
     }
-    fun manual(context: Context) = WorkManager.getInstance(context).enqueueUniqueWork("kalplan-manual", ExistingWorkPolicy.KEEP,
+    fun manual(context: Context) = WorkManager.getInstance(context).enqueueUniqueWork(MANUAL_WORK_NAME, ExistingWorkPolicy.KEEP,
         OneTimeWorkRequestBuilder<SyncWorker>().setInputData(workDataOf("manual" to true)).setConstraints(constraints).build())
     fun continueSync(context: Context) = WorkManager.getInstance(context).enqueueUniqueWork("kalplan-continuation", ExistingWorkPolicy.APPEND_OR_REPLACE,
         OneTimeWorkRequestBuilder<SyncWorker>().setInitialDelay(1, TimeUnit.MINUTES).setConstraints(constraints).build())
