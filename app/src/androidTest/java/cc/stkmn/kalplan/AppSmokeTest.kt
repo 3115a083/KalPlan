@@ -9,7 +9,6 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.activity.compose.setContent
 import androidx.compose.ui.text.TextRange
-import androidx.test.espresso.Espresso.pressBack
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -92,10 +91,10 @@ class AppSmokeTest {
         compose.onNodeWithText("Swipe").performClick()
         compose.onNodeWithText("All details and source mail").performScrollTo().performClick()
         compose.onNodeWithText("Info").assertExists()
-        pressBack()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         compose.onNodeWithText("All details and source mail").assertExists()
         screenshot("swipe-rich-card")
-        pressBack()
+        InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
         compose.onNodeWithText("Your requests").assertExists()
         compose.onNodeWithText("Calendar").performClick()
         compose.onNodeWithText("Day").performClick()

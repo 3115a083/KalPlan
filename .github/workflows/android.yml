@@ -34,7 +34,7 @@ jobs:
         run: python3 tools/audit_dependencies.py app/build/reports/dependencies.tsv app/build/reports/dependency-audit.json
       - name: Assemble debug APK
         run: |
-          ./gradlew :app:assembleDebug --stacktrace
+          ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
           sha256sum app/build/outputs/apk/debug/app-debug.apk
       - name: Upload debug APK
         if: success()
