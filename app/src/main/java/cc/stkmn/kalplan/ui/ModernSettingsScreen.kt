@@ -85,10 +85,10 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 Text(tr("Swipe-Ansicht", "Swipe layout"), style = MaterialTheme.typography.labelLarge)
                 listOf("REQUEST_FIRST", "CALENDAR_FIRST").forEach { model ->
                     val selected = state.settings.swipeDisplayModel == model
-                    Row(Modifier.fillMaxWidth().selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton,
+                    Row(Modifier.fillMaxWidth().selectable(selected = selected, enabled = !busy, role = androidx.compose.ui.semantics.Role.RadioButton,
                         onClick = { updateSettings { it.copy(swipeDisplayModel = model) } }).padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        RadioButton(selected = selected, onClick = null)
+                        RadioButton(selected = selected, onClick = null, enabled = !busy)
                         Icon(if (model == "REQUEST_FIRST") Icons.Outlined.MailOutline else Icons.Outlined.CalendarMonth, null)
                         Column(Modifier.weight(1f)) {
                             Text(if (model == "REQUEST_FIRST") tr("Anfrage im Fokus", "Request first") else tr("Kalender im Fokus", "Calendar first"), style = MaterialTheme.typography.titleSmall)

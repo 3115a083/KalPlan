@@ -93,7 +93,7 @@ class AppSmokeTest {
         val repository = AppRepository.get(context)
         val testRequest = cc.stkmn.kalplan.data.StoredRequest("small-swipe", sender = "synthetic@example.invalid",
             subject = "A long appointment title on a small display", body = "Synthetic request content. ".repeat(100), receivedMillis = 0,
-            candidate = cc.stkmn.kalplan.data.StoredCandidate(1_800_000_000_000, 1_800_003_600_000, location = "Example location"))
+            candidates = listOf(cc.stkmn.kalplan.data.StoredCandidate(1_800_000_000_000, 1_800_003_600_000, location = "Example location")), selectedCandidate = 0)
         var model by mutableStateOf("REQUEST_FIRST")
         var clicked by mutableStateOf("")
         compose.activity.runOnUiThread { compose.activity.setContent {
