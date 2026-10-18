@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
@@ -145,7 +146,7 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                                         Button(onClick = { settingsFocus++; section = "SETTINGS" }) { Text(tr("Nachricht einrichten", "Set up email")) }
                                     } }
                                 }
-                                items(requests, key = { it.id }) { r -> RequestCard(r, state.settings, planner, onClick = { selected = r.id }) }
+                                items(requests, key = { it.id }) { r -> RequestCard(r, state, planner, onClick = { selected = r.id }) }
                             }
                         }
                     }
@@ -159,14 +160,23 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
 
 @Composable
 fun StatusPill(status: String) {
-    val color = when(status) { "FEASIBLE" -> Color(0xFF12653B); "CONFLICT" -> Color(0xFFAC2445); "POSSIBLE" -> Color(0xFF835500); else -> MaterialTheme.colorScheme.primary }
-    Surface(color = color.copy(alpha = 0.12f), contentColor = if (isSystemInDarkTheme()) when(status) { "FEASIBLE" -> Color(0xFF7AE4AF); "CONFLICT" -> Color(0xFFFF9CB2); "POSSIBLE" -> Color(0xFFFFD17D); else -> MaterialTheme.colorScheme.primary } else color,
-        shape = RoundedCornerShape(10.dp)) { Text(statusText(status), modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium) }
+    val dark = LocalKalPlanDarkTheme.current
+    val color = when (status) {
+        "FEASIBLE" -> if (dark) Color(0xFF7AE4AF) else Color(0xFF12653B)
+        "CONFLICT" -> if (dark) Color(0xFFFF9CB2) else Color(0xFFAC2445)
+        "POSSIBLE" -> if (dark) Color(0xFFFFD17D) else Color(0xFF835500)
+        else -> MaterialTheme.colorScheme.primary
+    }
+    val background = color.copy(alpha = 0.12f).compositeOver(MaterialTheme.colorScheme.surface)
+    Surface(color = background, contentColor = readableContentColor(color, background), shape = RoundedCornerShape(10.dp)) {
+        Text(statusText(status), modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+    }
 }
 @Composable
-fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, onClick: () -> Unit) {
+fun RequestCard(request: StoredRequest, state: AppData, planner: Planner, onClick: () -> Unit) {
+    val settings = state.settings
     var assessment by remember(request.id) { mutableStateOf<Assessment?>(null) }
-    LaunchedEffect(request, settings.beforeBuffer, settings.afterBuffer) { assessment = runCatching { planner.assess(request) }.getOrNull() }
+    LaunchedEffect(request, settings, state.calendars, state.requests, state.lastSyncMillis) { assessment = runCatching { planner.assess(request) }.getOrNull() }
     val priority = PlanningPolicy.priority(request, settings)
     val status = if (request.pending) if (request.unclear) "UNKNOWN" else assessment?.status ?: "UNKNOWN" else request.status
     val border = when(status) { "FEASIBLE" -> Color(0xFF40BD88); "CONFLICT" -> Color(0xFFEE5378); "POSSIBLE" -> Color(0xFFF4B54B); else -> MaterialTheme.colorScheme.primary }
@@ -207,8 +217,9 @@ fun RequestCard(request: StoredRequest, settings: Settings, planner: Planner, on
         labels.take(max).forEach { label ->
             val color = policies.firstOrNull { it.name == label }?.colorHex?.takeIf { it.matches(Regex("[0-9a-fA-F]{6}")) }
                 ?.let { Color(android.graphics.Color.parseColor("#$it")) } ?: MaterialTheme.colorScheme.secondary
-            Surface(shape = RoundedCornerShape(8.dp), color = color.copy(alpha = 0.14f), border = BorderStroke(1.dp, color.copy(alpha = 0.45f))) {
-                Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = color, style = MaterialTheme.typography.labelMedium)
+            val background = color.copy(alpha = 0.14f).compositeOver(MaterialTheme.colorScheme.surface)
+            Surface(shape = RoundedCornerShape(8.dp), color = background, border = BorderStroke(1.dp, color.copy(alpha = 0.45f))) {
+                Text(label, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), color = readableContentColor(color, background), style = MaterialTheme.typography.labelMedium)
             }
         }
         if (labels.size > max) Text("+${labels.size - max}", style = MaterialTheme.typography.labelMedium)

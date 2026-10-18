@@ -15,6 +15,33 @@ import cc.stkmn.kalplan.ui.generateDebugCases
 @RunWith(AndroidJUnit4::class)
 class AppSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @Test fun guidedProfileKeepsBothReplyTemplatesAfterSaving() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val repository = AppRepository.get(context)
+        runBlocking {
+            repository.load()
+            val request = cc.stkmn.kalplan.data.StoredRequest(
+                "profile-save-regression", sender = "example@example.org", subject = "Profile save regression",
+                body = "Datum: 14.12.2026\nUhrzeit: 14:00\nOrt: Online", receivedMillis = 1_791_014_400_000,
+                unclear = false
+            )
+            repository.update { it.copy(requests = listOf(request),
+                settings = it.settings.copy(language = "EN")) }
+        }
+        compose.waitUntil(15_000) { compose.onAllNodesWithText("Profile save regression").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Profile save regression").performClick()
+        compose.onNodeWithText("Check", substring = false).performClick()
+        compose.onNodeWithText("Create profile from this email").performScrollTo().performClick()
+        compose.onAllNodesWithText("Add field")[0].performScrollTo().performClick()
+        compose.onNodeWithText("Acceptance template, empty = global").performScrollTo().performTextReplacement("Accepted {date}")
+        compose.onNodeWithText("Decline template, empty = global").performScrollTo().performTextReplacement("Unavailable {date}")
+        screenshot("guided-profile-templates")
+        compose.onNodeWithText("Save").performClick()
+        compose.waitUntil(10_000) { repository.data.value.profiles.any { it.name == "Profile save regression" } }
+        val saved = repository.data.value.profiles.last { it.name == "Profile save regression" }
+        org.junit.Assert.assertEquals("Accepted {date}", saved.acceptTemplate)
+        org.junit.Assert.assertEquals("Unavailable {date}", saved.declineTemplate)
+    }
     @Test fun syntheticDetailSafeConfirmationAndModernSettings() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         runBlocking {

@@ -8,8 +8,12 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+
+val LocalKalPlanDarkTheme = staticCompositionLocalOf { false }
 
 enum class ThemeChoice {
     MATERIAL_YOU,
@@ -152,13 +156,13 @@ fun KalPlanTheme(
             if (darkTheme) KalPlanDark else KalPlanLight
     }
 
-    MaterialTheme(
-        colorScheme = if (primaryHex.matches(Regex("[0-9a-fA-F]{6}"))) {
-            val custom = Color(android.graphics.Color.parseColor("#" + primaryHex))
-            val luminance = 0.2126 * custom.red + 0.7152 * custom.green + 0.0722 * custom.blue
-            scheme.copy(primary = custom, onPrimary = if (luminance > 0.5) Color.Black else Color.White)
-        } else scheme,
-        content = content
-    )
+    CompositionLocalProvider(LocalKalPlanDarkTheme provides darkTheme) {
+        MaterialTheme(
+            colorScheme = if (primaryHex.matches(Regex("[0-9a-fA-F]{6}"))) {
+                val custom = Color(android.graphics.Color.parseColor("#" + primaryHex))
+                scheme.copy(primary = custom, onPrimary = readableContentColor(Color.White, custom))
+            } else scheme,
+            content = content
+        )
+    }
 }
-

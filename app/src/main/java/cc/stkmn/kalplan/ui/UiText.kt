@@ -50,6 +50,7 @@ fun parseLocalDateText(value: String, locale: Locale = Locale.getDefault()): Loc
     "time_overlap" -> tr("Überschneidung mit einem belegten Termin", "Overlaps a busy event")
     "buffer_tight" -> tr("Der eingestellte Puffer reicht nicht", "Configured buffer is too short")
     "time_clear" -> tr("Keine Zeitüberschneidung", "No time overlap")
+    "invalid_interval" -> tr("Ende muss nach dem Beginn liegen. Angaben korrigieren.", "End must be after start. Correct the appointment details.")
     "select_calendars" -> tr("Kalender in den Einstellungen auswählen", "Select calendars in settings")
     "calendar_permission" -> tr("Kalenderberechtigung fehlt", "Calendar permission missing")
     "select_candidate" -> tr("Terminkandidat auswählen", "Select an appointment candidate")

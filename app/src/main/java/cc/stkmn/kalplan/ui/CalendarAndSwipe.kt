@@ -189,7 +189,7 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
                 }
                 Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Box(Modifier.fillMaxWidth().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
-                        RequestCard(request, state.settings, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
+                        RequestCard(request, state, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
                     }
                     Text(when { drag > threshold * 0.25f -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -threshold * 0.25f -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
                 }
