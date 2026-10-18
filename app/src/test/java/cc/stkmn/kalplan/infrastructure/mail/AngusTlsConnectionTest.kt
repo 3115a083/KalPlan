@@ -177,6 +177,7 @@ class AngusTlsConnectionTest {
                         send("* LIST (\\HasNoChildren) \"/\" \"Archive\"")
                         send("$tag OK listed")
                     }
+                    "NOOP" -> send("$tag OK noop") // Angus checks pooled connections with a read-only keepalive.
                     "LOGOUT" -> { send("* BYE fixture closed"); send("$tag OK logout"); return }
                     else -> error("Unexpected IMAP command: $command")
                 }
