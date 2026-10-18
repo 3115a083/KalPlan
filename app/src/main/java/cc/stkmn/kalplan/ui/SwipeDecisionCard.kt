@@ -18,9 +18,11 @@ import cc.stkmn.kalplan.domain.policy.PlanningPolicy
 import java.time.*
 
 @Composable
-fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assessment?, onOpen: () -> Unit) {
+fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assessment?, onUnclear: () -> Unit = {}, onOpen: () -> Unit) {
     var expanded by rememberSaveable(request.id) { mutableStateOf(false) }
     val candidate = request.candidate ?: request.candidates.firstOrNull()
+    val calendarFirst = state.settings.swipeDisplayModel == "CALENDAR_FIRST"
+    val locationText = if (candidate?.mode in setOf("ONLINE", "HYBRID")) tr("Online", "Online") + " · " + state.settings.originAddress else candidate?.location.orEmpty().ifBlank { tr("Ort prüfen", "Review location") }
     ElevatedCard(Modifier.fillMaxSize(), shape = RoundedCornerShape(30.dp), elevation = CardDefaults.elevatedCardElevation(defaultElevation = 9.dp)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Surface(color = MaterialTheme.colorScheme.primaryContainer) {
@@ -30,14 +32,24 @@ fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assess
                         StatusPill(if (request.unclear) "UNKNOWN" else assessment?.status ?: "UNKNOWN")
                     }
                     Text(appointmentTime(candidate), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    if (!calendarFirst) {
                     Text(request.subject, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         AppointmentKindIcon(candidate?.location, candidate?.mode)
-                        Text(if (candidate?.mode in setOf("ONLINE", "HYBRID")) tr("Online", "Online") + " · " + state.settings.originAddress else candidate?.location.orEmpty().ifBlank { tr("Ort prüfen", "Review location") }, style = MaterialTheme.typography.bodyLarge)
+                        Text(locationText, style = MaterialTheme.typography.bodyLarge)
+                    }
                     }
                 }
             }
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (calendarFirst) {
+                    candidate?.let { SwipeCalendarPreview(it, assessment) }
+                    Text(request.subject, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppointmentKindIcon(candidate?.location, candidate?.mode)
+                        Text(locationText)
+                    }
+                }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
                     PriorityMark(PlanningPolicy.priority(request, state.settings).score)
                     Icon(Icons.Outlined.Schedule, null, Modifier.size(18.dp))
@@ -49,7 +61,7 @@ fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assess
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(Icons.Outlined.MailOutline, null, Modifier.size(18.dp)); Text(tr("Aus der Anfrage", "From the request"), style = MaterialTheme.typography.titleSmall) }
                 Text(request.body, maxLines = if (expanded) Int.MAX_VALUE else 3, style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) tr("Weniger anzeigen", "Show less") else tr("Inhalt ausklappen", "Expand content")); Icon(if (expanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null) }
-                candidate?.let { SwipeCalendarPreview(it, assessment) }
+                if (!calendarFirst) candidate?.let { SwipeCalendarPreview(it, assessment) }
                 assessment?.reasons?.filter { it != "time_clear" }?.forEach { reason ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Icon(Icons.Outlined.Info, null, Modifier.size(18.dp)); Text(reasonText(reason), style = MaterialTheme.typography.bodySmall) }
                 }
@@ -61,7 +73,9 @@ fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assess
                     Text(tr("Arbeit: ", "Work: ") + "${(v.workCents + v.workFlatCents) / 100.0} € · " + tr("Fahrt: ", "Travel: ") + "${(v.travelCents + v.travelFlatCents) / 100.0} €", style = MaterialTheme.typography.bodySmall)
                 }
                 if (request.attachmentMeta.isNotEmpty()) Text("${request.attachmentMeta.size} " + tr("Anhänge", "attachments"), style = MaterialTheme.typography.bodySmall)
+                Text(tr("Links: später · Rechts: Annahme prüfen. Es wird keine Mail gesendet.", "Left: later · Right: review acceptance. No mail is sent."), style = MaterialTheme.typography.bodySmall)
                 TextButton(onClick = onOpen) { Text(tr("Alle Details und Originalmail", "All details and source mail")); Icon(Icons.Outlined.OpenInNew, null) }
+                TextButton(onClick = onUnclear) { Icon(Icons.Outlined.HelpOutline, null); Spacer(Modifier.width(6.dp)); Text(tr("Als unklar markieren", "Mark unclear")) }
                 if (request.demo) Text(tr("Beispiel. Versand gesperrt.", "Sample. Sending disabled."), style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(12.dp))
             }

@@ -131,6 +131,7 @@ data class Settings(
     val originAddress: String = "",
     val theme: String = "KALPLAN",
     val themeMode: String = "SYSTEM",
+    val swipeDisplayModel: String = "REQUEST_FIRST",
     val language: String = "SYSTEM",
     val primaryHex: String = "",
     val acceptTemplate: String = "Guten Tag,\n\nich kann den Termin {date} um {time} übernehmen. Bitte bestätigen Sie den Auftrag.\n\nMit freundlichen Grüßen",

@@ -1,6 +1,12 @@
 package cc.stkmn.kalplan
 
 import androidx.compose.ui.test.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.activity.compose.setContent
 import androidx.compose.ui.text.TextRange
 import androidx.test.espresso.Espresso.pressBack
@@ -83,6 +89,42 @@ class AppSmokeTest {
         compose.onNodeWithText("Mar", substring = false).performClick()
         compose.onNodeWithText("March 2030").assertExists()
         screenshot("month-year-navigation")
+        // Test the actual screen in a short viewport with accessibility font scaling.
+        val repository = AppRepository.get(context)
+        val testRequest = cc.stkmn.kalplan.data.StoredRequest("small-swipe", sender = "synthetic@example.invalid",
+            subject = "A long appointment title on a small display", body = "Synthetic request content. ".repeat(100), receivedMillis = 0,
+            candidate = cc.stkmn.kalplan.data.StoredCandidate(1_800_000_000_000, 1_800_003_600_000, location = "Example location"))
+        var model by mutableStateOf("REQUEST_FIRST")
+        var clicked by mutableStateOf("")
+        compose.activity.runOnUiThread { compose.activity.setContent {
+            val density = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(density, 2f), cc.stkmn.kalplan.ui.LocalAppLanguage provides "EN") {
+                cc.stkmn.kalplan.ui.theme.KalPlanTheme {
+                    Box(Modifier.requiredSize(320.dp, 320.dp)) {
+                        cc.stkmn.kalplan.ui.SwipeScreen(
+                            cc.stkmn.kalplan.data.AppData(requests = listOf(testRequest), settings = cc.stkmn.kalplan.data.Settings(swipeDisplayModel = model)),
+                            cc.stkmn.kalplan.application.Planner(context, repository), onOpen = {},
+                            onAction = { _, action -> clicked = action }, onLater = { clicked = "later" }, onUnclear = {}, onClose = {})
+                    }
+                }
+            }
+        } }
+        for (displayModel in listOf("REQUEST_FIRST", "CALENDAR_FIRST")) {
+            compose.runOnIdle { model = displayModel }
+            val accept = compose.onNodeWithContentDescription("Review acceptance")
+            val before = accept.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            compose.onNodeWithContentDescription("Review decline").assertIsDisplayed()
+            compose.onNodeWithContentDescription("Later").assertIsDisplayed()
+            compose.onNodeWithText("All details and source mail").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Expand content").performScrollTo().performClick()
+            compose.onNodeWithText("All details and source mail").performScrollTo().assertIsDisplayed()
+            org.junit.Assert.assertEquals(before, accept.assertIsDisplayed().fetchSemanticsNode().boundsInRoot)
+            compose.runOnIdle { clicked = "" }
+            accept.performClick()
+            compose.runOnIdle { org.junit.Assert.assertEquals("accept", clicked) }
+            screenshot("swipe-small-large-font-$displayModel")
+            compose.onNodeWithText("Show less").performScrollTo().performClick()
+        }
     }
     @Test fun guidedProfileKeepsBothReplyTemplatesAfterSaving() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext

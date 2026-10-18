@@ -8,7 +8,7 @@ Based on 0.5.1-dev (PR #7). User-requested scope:
 - Visual OR groups containing AND conditions for sender, subject and body; legacy label rules remain supported.
 - Day/week/month calendar, colored calendar-event dots, per-calendar display colors and direct year/month navigation.
 - Location, missing/hidden location and online icons across views.
-- Rich swipe review card with expandable source excerpt, calendar occupation/collisions, labels, duration, travel warnings and estimated value. Design workshop remains open.
+- Rich swipe review card with expandable source excerpt, calendar occupation/collisions, labels, duration, travel warnings and estimated value. The design workshop selected both request-first and calendar-first layouts, persisted under Design and language. Both present the same information with three fixed actions below the scrolling card. Instrumented coverage exercises both layouts at 320×320 dp and 2× font scale.
 - Back from swipe detail returns to swipe; next Back returns to the list. Swipe view state is retained across detail navigation.
 - Password-encrypted portable backup/import with optional credentials. AES-GCM with PBKDF2-HMAC-SHA256 (600,000 rounds). Bounded, validated files; explicit replace preview; device-encrypted pre-import recovery and durable restore journal. Connections pause, calendar IDs and signature URI grants require re-selection. Local send fences and request limits survive imports.
 - Receive-only mail accounts no longer require an outgoing address/SMTP configuration; host/login whitespace is normalized. Connection errors distinguish authentication, DNS, TLS and timeout without displaying server responses or secrets.

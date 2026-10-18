@@ -175,7 +175,7 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
     var visited by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val requests = state.requests.filter { it.pending && it.id !in visited }.sortedByDescending { PlanningPolicy.priority(it, state.settings).score }
     val request = requests.firstOrNull()
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onClose) { Text(tr("Schließen", "Close")) }
             Text("${visited.size + if (request != null) 1 else 0} / ${visited.size + requests.size}")
@@ -209,19 +209,26 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
                         Text(tr("Prüfen", "Review") + " →", Modifier.padding(12.dp), color = Color(0xFF075C39), fontWeight = FontWeight.Bold)
                     }
                 }
-                Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.fillMaxWidth().weight(1f).graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
-                        SwipeDecisionCard(request, state, assessment) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
-                    }
-                    Text(when { drag > threshold * 0.25f -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -threshold * 0.25f -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxSize().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
+                    SwipeDecisionCard(request, state, assessment, onUnclear = { onUnclear(request.id); visited = visited + request.id }) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                FilledTonalIconButton(modifier = Modifier.size(58.dp), onClick = { onAction(request.id, "decline") }) { Icon(Icons.Outlined.Close, tr("Ablehnen prüfen", "Review decline")) }
-                FilledTonalIconButton(modifier = Modifier.size(52.dp), onClick = { onLater(request.id); visited = visited + request.id }) { Icon(Icons.Outlined.Schedule, tr("Später", "Later")) }
-                FilledTonalIconButton(modifier = Modifier.size(52.dp), onClick = { onUnclear(request.id); visited = visited + request.id }) { Icon(Icons.Outlined.HelpOutline, tr("Als unklar markieren", "Mark unclear")) }
-                FilledIconButton(modifier = Modifier.size(62.dp), onClick = { onAction(request.id, "accept") }) { Icon(Icons.Outlined.Check, tr("Annahme prüfen", "Review acceptance"), Modifier.size(30.dp)) }
-            }
+            SwipeDecisionActions(
+                onDecline = { onAction(request.id, "decline") },
+                onLater = { onLater(request.id); visited = visited + request.id },
+                onAccept = { onAction(request.id, "accept") })
+        }
+    }
+}
+
+/** Measured before the weighted card, so actions stay outside its scrolling content. */
+@Composable
+fun SwipeDecisionActions(onDecline: () -> Unit, onLater: () -> Unit, onAccept: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), tonalElevation = 3.dp, shape = RoundedCornerShape(24.dp)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(modifier = Modifier.size(56.dp), onClick = onDecline) { Icon(Icons.Outlined.Close, tr("Ablehnen prüfen", "Review decline")) }
+            FilledTonalIconButton(modifier = Modifier.size(56.dp), onClick = onLater) { Icon(Icons.Outlined.Schedule, tr("Später", "Later")) }
+            FilledIconButton(modifier = Modifier.size(60.dp), onClick = onAccept) { Icon(Icons.Outlined.Check, tr("Annahme prüfen", "Review acceptance"), Modifier.size(30.dp)) }
         }
     }
 }

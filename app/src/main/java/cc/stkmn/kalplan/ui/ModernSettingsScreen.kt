@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.*
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -81,6 +82,20 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 ChoiceRow(listOf("SYSTEM", "DE", "EN"), state.settings.language, label = { languageName(it) }) { updateSettings { s -> s.copy(language = it) } }
                 Text(tr("Helligkeit", "Brightness"), style = MaterialTheme.typography.labelLarge)
                 ChoiceRow(listOf("SYSTEM", "LIGHT", "DARK"), state.settings.themeMode, label = { brightnessName(it) }) { updateSettings { s -> s.copy(themeMode = it) } }
+                Text(tr("Swipe-Ansicht", "Swipe layout"), style = MaterialTheme.typography.labelLarge)
+                listOf("REQUEST_FIRST", "CALENDAR_FIRST").forEach { model ->
+                    val selected = state.settings.swipeDisplayModel == model
+                    Row(Modifier.fillMaxWidth().selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton,
+                        onClick = { updateSettings { it.copy(swipeDisplayModel = model) } }).padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        RadioButton(selected = selected, onClick = null)
+                        Icon(if (model == "REQUEST_FIRST") Icons.Outlined.MailOutline else Icons.Outlined.CalendarMonth, null)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (model == "REQUEST_FIRST") tr("Anfrage im Fokus", "Request first") else tr("Kalender im Fokus", "Calendar first"), style = MaterialTheme.typography.titleSmall)
+                            Text(if (model == "REQUEST_FIRST") tr("Titel, Ort und Mail zuerst", "Title, location and mail first") else tr("Zeitfenster und Kollisionen zuerst", "Time slot and collisions first"), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
                 Text(tr("Farbstil", "Color style"), style = MaterialTheme.typography.labelLarge)
                 ThemePicker(state.settings.theme) { selected -> updateSettings { it.copy(theme = selected) } }
             }
