@@ -22,6 +22,7 @@ fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assess
     var expanded by rememberSaveable(request.id) { mutableStateOf(false) }
     val candidate = request.candidate ?: request.candidates.firstOrNull()
     val calendarFirst = state.settings.swipeDisplayModel == "CALENDAR_FIRST"
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val locationText = if (candidate?.mode in setOf("ONLINE", "HYBRID")) tr("Online", "Online") + " · " + state.settings.originAddress else candidate?.location.orEmpty().ifBlank { tr("Ort prüfen", "Review location") }
     ElevatedCard(Modifier.fillMaxSize(), shape = RoundedCornerShape(30.dp), elevation = CardDefaults.elevatedCardElevation(defaultElevation = 9.dp)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -69,7 +70,7 @@ fun SwipeDecisionCard(request: StoredRequest, state: AppData, assessment: Assess
                 if (state.settings.value.enabled && candidate != null) {
                     val v = PlanningPolicy.value(candidate, request.travelMinutes, request.distanceKm, PlanningPolicy.valueSettings(request, state.settings))
                     Text(tr("Geschätzter Auftragswert", "Estimated order value"), style = MaterialTheme.typography.labelLarge)
-                    Text(String.format(java.util.Locale.getDefault(), "≈ %.2f €", v.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    Text(String.format(locale, "≈ %.2f €", v.totalCents / 100.0), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                     Text(tr("Arbeit: ", "Work: ") + "${(v.workCents + v.workFlatCents) / 100.0} € · " + tr("Fahrt: ", "Travel: ") + "${(v.travelCents + v.travelFlatCents) / 100.0} €", style = MaterialTheme.typography.bodySmall)
                 }
                 if (request.attachmentMeta.isNotEmpty()) Text("${request.attachmentMeta.size} " + tr("Anhänge", "attachments"), style = MaterialTheme.typography.bodySmall)
