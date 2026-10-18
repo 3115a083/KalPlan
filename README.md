@@ -1,4 +1,6 @@
-# KalPlan 0.4.0-dev
+# KalPlan 0.5.1-dev
+
+This update improves multi-day calendar checks, missing-origin handling, saved profile reply templates and theme-aware text contrast. See [the focused review](docs/REVIEW_2026-10-18.md) for scope and verification limits.
 
 Android app for reviewing appointment requests, checking device calendars and planning replies. This branch turns the original scaffold into a functional development build using the Dispatcher design and icon 1.
 

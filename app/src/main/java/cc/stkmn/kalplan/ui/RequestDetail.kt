@@ -404,6 +404,11 @@ private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismis
     val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis)) }
     val candidates = remember(input) { GuidedRuleFactory.candidates(input) }
     var preview by remember { mutableStateOf("") }
+    fun draftProfile(id: String) = ExtractionProfile(
+        id = id, name = name, extractors = rules,
+        acceptTemplate = acceptOverride.takeIf { it.isNotBlank() },
+        declineTemplate = declineOverride.takeIf { it.isNotBlank() }
+    )
     AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Geführtes Extraktionsprofil", "Guided extraction profile")) }, text = {
         Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             EditField(tr("Profilname", "Profile name"), name) { name = it }
@@ -421,14 +426,14 @@ private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismis
             EditField(tr("Absagevorlage, leer = global", "Decline template, empty = global"), declineOverride) { declineOverride = it }
             Text("${rules.size} " + tr("Regeln", "rules"))
             OutlinedButton(enabled = rules.isNotEmpty(), onClick = {
-                val p = ExtractionProfile(id = "preview", name = name, extractors = rules, acceptTemplate = acceptOverride.takeIf { it.isNotBlank() }, declineTemplate = declineOverride.takeIf { it.isNotBlank() })
+                val p = draftProfile("preview")
                 val r = KalPlanExtractionPipeline().extract(input, p)
                 preview = r.fields.values.joinToString("\n") { "${it.semantic}: ${it.value}" } + "\n" + r.issues.joinToString { it.code }
             }) { Text(tr("Vorschau testen", "Test preview")) }
             Text(preview, style = MaterialTheme.typography.bodySmall)
         }
     }, confirmButton = { TextButton(enabled = rules.isNotEmpty() && name.isNotBlank(), onClick = {
-        val p = ExtractionProfile(id = UUID.randomUUID().toString(), name = name, extractors = rules)
+        val p = draftProfile(UUID.randomUUID().toString())
         if (ProfileValidator().validate(p).isEmpty()) onSave(p)
     }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }
