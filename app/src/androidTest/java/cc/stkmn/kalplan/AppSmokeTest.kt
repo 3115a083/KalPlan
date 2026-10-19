@@ -72,7 +72,18 @@ class AppSmokeTest {
             r.update { it.copy(accounts = it.accounts.map { account -> account.copy(enabled = false) }, settings = it.settings.copy(debug = true, language = "EN", syncMinutes = 0)) }
             generateDebugCases(context, r)
         }
-        compose.waitUntil(15_000) { compose.onAllNodesWithText("Swipe").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(15_000) { compose.onAllNodesWithContentDescription("Swipe view").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("History", substring = false).assertDoesNotExist()
+        compose.onNodeWithText("List", substring = false).assertDoesNotExist()
+        compose.onNodeWithContentDescription("Menu").performClick()
+        compose.onNodeWithText("Show history").performClick()
+        compose.onNodeWithText("History", substring = false).assertExists()
+        compose.onNodeWithContentDescription("Menu").performClick()
+        compose.onNodeWithText("Pending requests").performClick()
+        compose.onNodeWithText("Your requests").assertExists()
+        val swipeBounds = compose.onNodeWithContentDescription("Swipe view").fetchSemanticsNode().boundsInRoot
+        val refreshBounds = compose.onNodeWithContentDescription("Sync").fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertTrue(swipeBounds.right <= refreshBounds.left)
         val refreshRepository = AppRepository.get(context)
         val previousSync = refreshRepository.data.value.lastSyncMillis ?: 0L
         // Keep the real worker running long enough to verify its UI state and duplicate protection.
@@ -89,7 +100,7 @@ class AppSmokeTest {
         } finally { refreshRepository.syncMutex.unlock() }
         compose.waitUntil(15_000) { (refreshRepository.data.value.lastSyncMillis ?: 0L) > previousSync }
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("manual-sync-status").fetchSemanticsNodes().isEmpty() }
-        compose.onNodeWithText("Swipe").performClick()
+        compose.onNodeWithContentDescription("Swipe view").performClick()
         compose.onNodeWithText("All details and source mail").performScrollTo().performClick()
         compose.onNodeWithText("Info").assertExists()
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK)
@@ -208,6 +219,7 @@ class AppSmokeTest {
         compose.onNodeWithText("Labels and sorting").performClick()
         compose.onNode(hasScrollAction()).performScrollToIndex(6)
         compose.onNodeWithText("Synchronization").performClick()
+        compose.onNodeWithText("Enable daily quiet hours").performScrollTo().performClick()
         compose.onNodeWithText("From").performScrollTo().performClick()
         compose.onNodeWithText("Choose time").assertExists()
         screenshot("quiet-time-picker")

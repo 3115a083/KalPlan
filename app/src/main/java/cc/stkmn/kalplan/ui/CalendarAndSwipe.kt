@@ -209,7 +209,7 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
                         Text(tr("Prüfen", "Review") + " →", Modifier.padding(12.dp), color = Color(0xFF075C39), fontWeight = FontWeight.Bold)
                     }
                 }
-                Box(Modifier.fillMaxSize().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
+                Box(Modifier.fillMaxSize().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f }) {
                     SwipeDecisionCard(request, state, assessment, onUnclear = { onUnclear(request.id); visited = visited + request.id }) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
                 }
             }

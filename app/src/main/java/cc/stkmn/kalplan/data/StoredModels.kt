@@ -122,6 +122,9 @@ data class Settings(
     val quietFrom: String = "",
     val quietUntil: String = "",
     val pausedWeekdays: Set<Int> = emptySet(),
+    // Missing fields in legacy JSON derive the equivalent explicit schedule.
+    val activeSyncWeekdays: Set<Int> = (1..7).filterNot { it in pausedWeekdays || pauseWeekends && it >= 6 }.toSet(),
+    val quietHoursEnabled: Boolean = quietFrom.isNotBlank() && quietUntil.isNotBlank(),
     val defaultDuration: Int = 60,
     val staleHours: Int = 72,
     val beforeBuffer: Int = 20,

@@ -65,6 +65,7 @@ object PortableBackup {
         require(d.profiles.all { ProfileValidator().validate(it).isEmpty() })
         require(d.settings.defaultDuration in 1..10080 && d.settings.beforeBuffer in 0..1440 && d.settings.afterBuffer in 0..1440)
         require(d.settings.syncMinutes == 0 || d.settings.syncMinutes in 5..1440)
+        require(d.settings.activeSyncWeekdays.all { it in 1..7 })
         require(d.settings.labels.size <= 1000 && d.settings.labels.all { it.conditionGroups.size <= 20 && it.conditionGroups.all { g -> g.conditions.size <= 20 } })
         require(d.requests.all { r -> r.candidates.all { c -> c.durationMinutes in 1..10080 && (c.startMillis == null || c.endMillis == null || c.endMillis > c.startMillis) } })
         require(snapshot.credentials.keys.all { it in allowedCredentialKeys(d) } && snapshot.credentials.values.all { it.length <= 1_000_000 })

@@ -112,11 +112,13 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                     if (selected != null) IconButton(onClick = { replyAction = null; selected = null }) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, tr("Zurück", "Back")) }
                 }, actions = {
                     if (selected == null) {
+                        IconButton(enabled = ready && section != "SWIPE", onClick = { section = "SWIPE"; showHistory = false }) {
+                            Icon(Icons.Outlined.Swipe, tr("Swipe-Ansicht", "Swipe view"))
+                        }
                         IconButton(enabled = ready && !busy && !refreshPending, onClick = { refresh(); Toast.makeText(context, "Sync angefordert / Sync requested", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Outlined.Sync, tr("Synchronisieren", "Sync")) }
                         IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, tr("Menü", "Menu")) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text(tr("Swipe-Ansicht", "Swipe view")) }, onClick = { section = "SWIPE"; menu = false })
-                            DropdownMenuItem(text = { Text(if (showHistory) tr("Offene Anfragen", "Pending requests") else tr("Verlauf anzeigen", "Show history")) }, onClick = { showHistory = !showHistory; menu = false })
+                            DropdownMenuItem(text = { Text(if (showHistory) tr("Offene Anfragen", "Pending requests") else tr("Verlauf anzeigen", "Show history")) }, onClick = { showHistory = !showHistory; section = "REQUESTS"; menu = false })
                         }
                     }
                 })
@@ -144,11 +146,6 @@ fun KalPlanApp(deepLink: Pair<String?, String?> = null to null) {
                         "SWIPE" -> sectionState.SaveableStateProvider("SWIPE") { SwipeScreen(state, planner, onOpen = { selected = it }, onAction = { id, action -> selected = id; replyAction = action },
                             onLater = { id -> run { repository.request(id) { it.copy(status = "LATER") } } }, onUnclear = { id -> run { repository.request(id) { it.copy(status = "UNCLEAR", unclear = true) } } }, onClose = { section = "REQUESTS" }) }
                         else -> {
-                            Box(Modifier.padding(horizontal = 16.dp)) {
-                                ChoiceRow(listOf("OPEN", "HISTORY", "SWIPE"), if (showHistory) "HISTORY" else "OPEN", label = { when (it) { "HISTORY" -> tr("Verlauf", "History"); "SWIPE" -> tr("Swipe", "Swipe"); else -> tr("Liste", "List") } }) { choice ->
-                                    when (choice) { "HISTORY" -> showHistory = true; "SWIPE" -> section = "SWIPE"; else -> showHistory = false }
-                                }
-                            }
                             StableTextField(search, { search = it }, label = { Text(tr("Suchen", "Search")) }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), singleLine = true)
                             val requests = state.requests.filter {
                                 (if (showHistory) !it.pending else it.pending) && (section != "UNCLEAR" || it.unclear) &&

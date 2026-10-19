@@ -94,12 +94,13 @@ object PlanningPolicy {
         val override = settings.labels.filter { it.name in request.labels && it.valueOverride != null }.maxByOrNull { it.score }?.valueOverride
         val base = settings.value
         val merged = if (override == null) base else base.copy(
-            workCentsPerHour = override.workCentsPerHour ?: settings.value.workCentsPerHour,
-            travelCentsPerHour = override.travelCentsPerHour ?: settings.value.travelCentsPerHour,
-            centsPerKm = override.centsPerKm ?: settings.value.centsPerKm,
-            flatCents = override.flatCents ?: settings.value.flatCents,
-            flatFeePresetIds = override.flatFeePresetIds ?: settings.value.flatFeePresetIds,
-            flatFeePresetId = override.flatFeePresetId ?: settings.value.flatFeePresetId,
+            workCentsPerHour = override.workCentsPerHour ?: 0L,
+            travelCentsPerHour = override.travelCentsPerHour ?: 0L,
+            centsPerKm = override.centsPerKm ?: 0L,
+            flatCents = override.flatCents ?: 0L,
+            flatFeePresetIds = override.flatFeePresetIds ?: emptyList(),
+            flatFeePresetId = override.flatFeePresetId.orEmpty(),
+            distanceBands = emptyList(), flatFeeComponents = emptyList(),
             billingStepMinutes = override.billingStepMinutes ?: settings.value.billingStepMinutes,
             roundUp = override.roundUp ?: settings.value.roundUp,
             roundingMode = override.roundingMode ?: settings.value.roundingMode,
@@ -112,13 +113,13 @@ object PlanningPolicy {
     }
     fun syncPaused(settings: Settings, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
         val day = now.dayOfWeek.value
-        if (day in settings.pausedWeekdays || settings.pauseWeekends && day >= 6) return true
+        if (day !in settings.activeSyncWeekdays) return true
         val from = runCatching { LocalDate.parse(settings.pauseFrom) }.getOrNull()
         val until = runCatching { LocalDate.parse(settings.pauseUntil) }.getOrNull()
         if (from != null && until != null && now.toLocalDate() in from..until) return true
         val quietFrom = runCatching { LocalTime.parse(settings.quietFrom) }.getOrNull()
         val quietUntil = runCatching { LocalTime.parse(settings.quietUntil) }.getOrNull()
-        if (quietFrom != null && quietUntil != null) {
+        if (settings.quietHoursEnabled && quietFrom != null && quietUntil != null) {
             val time = now.toLocalTime()
             if (quietFrom == quietUntil || quietFrom < quietUntil && time >= quietFrom && time < quietUntil ||
                 quietFrom > quietUntil && (time >= quietFrom || time < quietUntil)) return true

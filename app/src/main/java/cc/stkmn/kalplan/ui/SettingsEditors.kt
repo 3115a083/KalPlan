@@ -55,13 +55,38 @@ fun TextSetting(label: String, value: String, onValue: (String) -> Unit) {
 }
 
 @Composable
-fun TimeRangeRow(from: String, until: String, onValue: (String, String) -> Unit) {
+fun SyncScheduleSettings(settings: Settings, enabled: Boolean = true, onChange: (Settings) -> Unit) {
+    Text(tr("Aktive Sync-Wochentage", "Active sync weekdays"), style = MaterialTheme.typography.labelLarge)
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        (1..7).forEach { day ->
+            FilterChip(selected = day in settings.activeSyncWeekdays, enabled = enabled,
+                onClick = { onChange(settings.copy(activeSyncWeekdays = if (day in settings.activeSyncWeekdays) settings.activeSyncWeekdays - day else settings.activeSyncWeekdays + day, pauseWeekends = false, pausedWeekdays = emptySet())) },
+                label = { Text(java.time.DayOfWeek.of(day).getDisplayName(java.time.format.TextStyle.SHORT, locale)) })
+        }
+    }
+    if (settings.activeSyncWeekdays.isEmpty()) Text(tr("Keine Tage aktiv. Manuelles Aktualisieren bleibt möglich.", "No days selected. Manual refresh remains available."), style = MaterialTheme.typography.bodySmall)
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("Tägliche Ruhezeit aktivieren", "Enable daily quiet hours"), Modifier.weight(1f))
+        Switch(checked = settings.quietHoursEnabled, enabled = enabled, onCheckedChange = { checked ->
+            onChange(settings.copy(quietHoursEnabled = checked,
+                quietFrom = if (checked && settings.quietFrom.isBlank()) "22:00" else settings.quietFrom,
+                quietUntil = if (checked && settings.quietUntil.isBlank()) "06:00" else settings.quietUntil))
+        })
+    }
+    if (settings.quietHoursEnabled) {
+        TimeRangeRow(settings.quietFrom, settings.quietUntil, enabled = enabled) { from, until -> onChange(settings.copy(quietFrom = from, quietUntil = until)) }
+        Text(tr("Über Mitternacht ist möglich, z. B. 22:00 bis 06:00.", "Overnight ranges are supported, e.g. 22:00 to 06:00."), style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+fun TimeRangeRow(from: String, until: String, enabled: Boolean = true, onValue: (String, String) -> Unit) {
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TimeChoiceButton(tr("Von", "From"), from.ifBlank { "22:00" }, from.isBlank(), Modifier.weight(1f)) { editing = "FROM" }
-        TimeChoiceButton(tr("Bis", "Until"), until.ifBlank { "06:00" }, until.isBlank(), Modifier.weight(1f)) { editing = "UNTIL" }
+        TimeChoiceButton(tr("Von", "From"), from.ifBlank { "22:00" }, from.isBlank(), Modifier.weight(1f), enabled) { editing = "FROM" }
+        TimeChoiceButton(tr("Bis", "Until"), until.ifBlank { "06:00" }, until.isBlank(), Modifier.weight(1f), enabled) { editing = "UNTIL" }
     }
-    if (from.isNotBlank() || until.isNotBlank()) TextButton(onClick = { onValue("", "") }) { Text(tr("Ruhezeit entfernen", "Remove quiet hours")) }
     editing?.let { target ->
         val initial = runCatching { LocalTime.parse(if (target == "FROM") from.ifBlank { "22:00" } else until.ifBlank { "06:00" }) }.getOrDefault(if (target == "FROM") LocalTime.of(22, 0) else LocalTime.of(6, 0))
         key(target, initial) {
@@ -77,8 +102,8 @@ fun TimeRangeRow(from: String, until: String, onValue: (String, String) -> Unit)
 }
 
 @Composable
-private fun TimeChoiceButton(label: String, value: String, placeholder: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    OutlinedButton(onClick = onClick, modifier = modifier.height(58.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
+private fun TimeChoiceButton(label: String, value: String, placeholder: Boolean, modifier: Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = modifier.height(58.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
         Icon(Icons.Outlined.Schedule, null)
         Spacer(Modifier.width(8.dp))
         Column(Modifier.weight(1f)) {
@@ -188,10 +213,10 @@ fun LabelEditorDialog(existing: LabelPolicy?, global: ValueSettings, presets: Li
     var travel by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.travelCentsPerHour)) }
     var km by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.centsPerKm)) }
     var flat by rememberSaveable { mutableStateOf(centsText(existing?.valueOverride?.flatCents)) }
-    var presetIds by rememberSaveable { mutableStateOf(((existing?.valueOverride?.flatFeePresetIds ?: global.flatFeePresetIds) + listOf(existing?.valueOverride?.flatFeePresetId ?: global.flatFeePresetId)).filter(String::isNotBlank).distinct()) }
+    var presetIds by rememberSaveable { mutableStateOf((existing?.valueOverride?.flatFeePresetIds.orEmpty() + listOf(existing?.valueOverride?.flatFeePresetId.orEmpty())).filter(String::isNotBlank).distinct()) }
     var groups by remember { mutableStateOf(editableLabelGroups(existing)) }
     val validMoney = listOf(work, travel, km, flat).all { it.isBlank() || eurosToCents(it) != null }
-    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (!durationEnabled || duration.toIntOrNull()?.let { it in 1..10080 } == true) && validMoney && groups.all { it.conditions.isNotEmpty() && it.conditions.all { c -> c.text.isNotBlank() } }
+    val valid = name.isNotBlank() && name.length <= 80 && color.matches(Regex("[0-9a-fA-F]{6}")) && (!durationEnabled || duration.toIntOrNull()?.let { it in 1..10080 } == true) && (!customValue || validMoney) && groups.all { it.conditions.isNotEmpty() && it.conditions.all { c -> c.text.isNotBlank() } }
     AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) tr("Label erstellen", "Create label") else tr("Label bearbeiten", "Edit label")) }, text = {
         Column(Modifier.heightIn(max = 620.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             StableTextField(name, { name = it.take(80) }, label = { Text(tr("Name", "Name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -206,17 +231,17 @@ fun LabelEditorDialog(existing: LabelPolicy?, global: ValueSettings, presets: Li
             if (durationEnabled) StableTextField(duration, { duration = it.filter(Char::isDigit).take(5) }, label = { Text(tr("Minuten", "Minutes")) }, singleLine = true)
             ToggleRow(tr("Auftragswert für dieses Label anpassen", "Adjust order value for this label"), customValue) { customValue = it }
             if (customValue) {
-                Text(tr("Leere Felder übernehmen den globalen Standard. Nur Abweichungen müssen eingetragen werden.", "Empty fields inherit the global default. Enter differences only."), style = MaterialTheme.typography.bodySmall)
-                MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work, { work = it }, centsText(global.workCentsPerHour))
-                MoneyField(tr("Fahrtzeit pro Stunde", "Travel per hour"), travel, { travel = it }, centsText(global.travelCentsPerHour))
-                MoneyField(tr("Kilometerpauschale", "Per kilometer"), km, { km = it }, centsText(global.centsPerKm))
-                MoneyField(tr("Pauschale pro Auftrag", "Flat fee per order"), flat, { flat = it }, centsText(global.flatCents))
+                Text(tr("Leere Preisfelder gelten als 0. Der globale Standard gilt nur, wenn diese Anpassung ausgeschaltet ist.", "Empty price fields mean 0. The global default applies only when this adjustment is switched off."), style = MaterialTheme.typography.bodySmall)
+                MoneyField(tr("Auftragszeit pro Stunde", "Work per hour"), work, { work = it }, "0")
+                MoneyField(tr("Fahrtzeit pro Stunde", "Travel per hour"), travel, { travel = it }, "0")
+                MoneyField(tr("Kilometerpauschale", "Per kilometer"), km, { km = it }, "0")
+                MoneyField(tr("Pauschale pro Auftrag", "Flat fee per order"), flat, { flat = it }, "0")
                 PresetMultiChoice(presetIds, presets) { presetIds = it }
             }
             if (onDelete != null) TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Outlined.Delete, null); Text(tr("Label löschen", "Delete label")) }
         }
     }, confirmButton = { TextButton(enabled = valid, onClick = {
-        val override = if (!customValue) null else ValueOverride(workCentsPerHour = work.takeIf(String::isNotBlank)?.let(::eurosToCents), travelCentsPerHour = travel.takeIf(String::isNotBlank)?.let(::eurosToCents), centsPerKm = km.takeIf(String::isNotBlank)?.let(::eurosToCents), flatCents = flat.takeIf(String::isNotBlank)?.let(::eurosToCents), flatFeePresetId = "", flatFeePresetIds = presetIds)
+        val override = if (!customValue) null else ValueOverride(workCentsPerHour = if (work.isBlank()) 0L else eurosToCents(work), travelCentsPerHour = if (travel.isBlank()) 0L else eurosToCents(travel), centsPerKm = if (km.isBlank()) 0L else eurosToCents(km), flatCents = if (flat.isBlank()) 0L else eurosToCents(flat), flatFeePresetId = "", flatFeePresetIds = presetIds)
         onSave((existing ?: LabelPolicy(name = name.trim())).copy(name = name.trim(), keywords = emptyList(), senderContains = "", conditionGroups = groups, score = score, durationMinutes = duration.takeIf { durationEnabled }?.toInt(), colorHex = color.uppercase(), keywordMode = mode, searchIn = searchIn, valueOverride = override))
     }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }
@@ -384,7 +409,7 @@ fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onS
             if (subjectContains.isNotBlank()) add(MatcherRule("visual_subject", Regex.escape(subjectContains.trim()), InputSource.SUBJECT))
             if (senderContains.isNotBlank()) add(MatcherRule("visual_sender", Regex.escape(senderContains.trim()), InputSource.SENDER))
         }
-        val saved = ExtractionProfile(id = existing?.id ?: UUID.randomUUID().toString(), name = name.trim(), enabled = enabled, matchers = matchers, extractors = rules, defaultDurationMinutes = duration.toIntOrNull(), locale = TemporalLocale.valueOf(locale), acceptTemplate = existing?.acceptTemplate, declineTemplate = existing?.declineTemplate)
+        val saved = (existing ?: ExtractionProfile(id = UUID.randomUUID().toString(), name = name.trim())).copy(name = name.trim(), enabled = enabled, matchers = matchers, extractors = rules, defaultDurationMinutes = duration.toIntOrNull(), locale = TemporalLocale.valueOf(locale))
         if (ProfileValidator().validate(saved).isEmpty()) onSave(saved)
     }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
 }

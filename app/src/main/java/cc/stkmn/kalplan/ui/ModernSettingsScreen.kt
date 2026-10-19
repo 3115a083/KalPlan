@@ -157,16 +157,13 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
             }
         }
         item {
-            SettingsGroup(Icons.Outlined.Sync, tr("Synchronisierung", "Synchronization"), tr("Intervall, Ruhetage und tägliche Ruhezeit", "Interval, pause days and daily quiet hours")) {
+            SettingsGroup(Icons.Outlined.Sync, tr("Synchronisierung", "Synchronization"), tr("Intervall, aktive Wochentage und optionale Ruhezeit", "Interval, active weekdays and optional quiet hours")) {
                 Text(tr("Intervall", "Interval"), style = MaterialTheme.typography.labelLarge)
                 ChoiceRow(listOf("0", "5", "10", "15", "30", "60"), state.settings.syncMinutes.toString(), label = { if (it == "0") tr("Manuell", "Manual") else "$it min" }) { value ->
                     val minutes = value.toInt(); updateSettings { it.copy(syncMinutes = minutes) }; SyncScheduler.configure(context, minutes)
                 }
                 Text(if (state.settings.syncMinutes == 0) tr("Nur manuell", "Manual only") else tr("Alle ${state.settings.syncMinutes} Minuten", "Every ${state.settings.syncMinutes} minutes"))
-                ToggleRow(tr("Am Wochenende pausieren", "Pause on weekends"), state.settings.pauseWeekends) { enabled -> updateSettings { it.copy(pauseWeekends = enabled) } }
-                Text(tr("Tägliche Ruhezeit", "Daily quiet hours"), style = MaterialTheme.typography.labelLarge)
-                TimeRangeRow(state.settings.quietFrom, state.settings.quietUntil) { from, until -> updateSettings { it.copy(quietFrom = from, quietUntil = until) } }
-                if (state.settings.quietFrom.isNotBlank()) Text(tr("Über Mitternacht ist möglich, z. B. 22:00 bis 06:00.", "Overnight ranges are supported, e.g. 22:00 to 06:00."), style = MaterialTheme.typography.bodySmall)
+                SyncScheduleSettings(state.settings, enabled = !busy) { settings -> updateSettings { settings } }
             }
         }
         item {

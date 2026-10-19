@@ -147,9 +147,7 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         SectionTitle(tr("Synchronisierung", "Sync"))
         EditField(tr("Intervall, Minuten. 0 = nur manuell", "Interval, minutes. 0 = manual only"), sync) { sync = it }
         Text(tr("5 bis 14 Minuten: Best-Effort. Android darf Läufe verzögern.", "5 to 14 minutes: best effort. Android may delay execution."), style = MaterialTheme.typography.bodySmall)
-        ToggleRow(tr("Wochenende pausieren", "Pause weekends"), draft.pauseWeekends) { draft = draft.copy(pauseWeekends = it) }
-        ChoiceRow((1..7).map { it.toString() }, "") { day -> val d = day.toInt(); draft = draft.copy(pausedWeekdays = if (d in draft.pausedWeekdays) draft.pausedWeekdays - d else draft.pausedWeekdays + d) }
-        Text(tr("Pausierte Wochentage (1 = Montag): ", "Paused weekdays (1 = Monday): ") + draft.pausedWeekdays.sorted().joinToString())
+        SyncScheduleSettings(draft, enabled = !busy) { draft = it }
         EditField(tr("Urlaub von (JJJJ-MM-TT)", "Vacation from (YYYY-MM-DD)"), draft.pauseFrom) { draft = draft.copy(pauseFrom = it) }
         EditField(tr("Urlaub bis (JJJJ-MM-TT)", "Vacation until (YYYY-MM-DD)"), draft.pauseUntil) { draft = draft.copy(pauseUntil = it) }
         state.lastSyncMillis?.let { Text(tr("Letzter erfolgreicher Sync: ", "Last successful sync: ") + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())) }
