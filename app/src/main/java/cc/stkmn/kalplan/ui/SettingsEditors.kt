@@ -3,6 +3,7 @@
 package cc.stkmn.kalplan.ui
 
 import androidx.compose.foundation.*
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -66,13 +67,15 @@ fun SyncScheduleSettings(settings: Settings, enabled: Boolean = true, onChange: 
         }
     }
     if (settings.activeSyncWeekdays.isEmpty()) Text(tr("Keine Tage aktiv. Manuelles Aktualisieren bleibt möglich.", "No days selected. Manual refresh remains available."), style = MaterialTheme.typography.bodySmall)
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    val toggleQuietHours: (Boolean) -> Unit = { checked ->
+        onChange(settings.copy(quietHoursEnabled = checked,
+            quietFrom = if (checked && settings.quietFrom.isBlank()) "22:00" else settings.quietFrom,
+            quietUntil = if (checked && settings.quietUntil.isBlank()) "06:00" else settings.quietUntil))
+    }
+    Row(Modifier.fillMaxWidth().toggleable(value = settings.quietHoursEnabled, enabled = enabled,
+        role = androidx.compose.ui.semantics.Role.Switch, onValueChange = toggleQuietHours), verticalAlignment = Alignment.CenterVertically) {
         Text(tr("Tägliche Ruhezeit aktivieren", "Enable daily quiet hours"), Modifier.weight(1f))
-        Switch(checked = settings.quietHoursEnabled, enabled = enabled, onCheckedChange = { checked ->
-            onChange(settings.copy(quietHoursEnabled = checked,
-                quietFrom = if (checked && settings.quietFrom.isBlank()) "22:00" else settings.quietFrom,
-                quietUntil = if (checked && settings.quietUntil.isBlank()) "06:00" else settings.quietUntil))
-        })
+        Switch(checked = settings.quietHoursEnabled, enabled = enabled, onCheckedChange = null)
     }
     if (settings.quietHoursEnabled) {
         TimeRangeRow(settings.quietFrom, settings.quietUntil, enabled = enabled) { from, until -> onChange(settings.copy(quietFrom = from, quietUntil = until)) }
