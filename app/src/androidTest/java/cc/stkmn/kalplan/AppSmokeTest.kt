@@ -69,7 +69,8 @@ class AppSmokeTest {
         for (character in "Alpha") field.performTextInput(character.toString())
         // Let the real API-26 IME finish opening before changing the selection.
         // A late platform focus/IME event otherwise moves the test cursor to the end.
-        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        android.os.SystemClock.sleep(500)
         compose.waitForIdle()
         field.performTextInputSelection(TextRange(2))
         field.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange, TextRange(2)))
