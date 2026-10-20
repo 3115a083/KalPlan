@@ -55,6 +55,7 @@ internal class ProfileWorkbenchState(existing: ExtractionProfile?, initial: Extr
     val preview = mutableStateOf<ExtractionResult?>(null)
     val previewBusy = mutableStateOf(false)
     val checks = mutableStateOf(emptyList<ProfileExampleCheck>())
+    val checkedProfile = mutableStateOf<ExtractionProfile?>(null)
     val checking = mutableStateOf(false)
     val feedback = mutableStateOf("")
     val duration = mutableStateOf(existing?.defaultDurationMinutes?.toString().orEmpty())
@@ -115,6 +116,7 @@ fun ProfileEditorDialog(
     var preview by state.preview
     var previewBusy by state.previewBusy
     var checks by state.checks
+    var checkedProfileSnapshot by state.checkedProfile
     var checking by state.checking
     var feedback by state.feedback
     var duration by state.duration
@@ -172,7 +174,7 @@ fun ProfileEditorDialog(
         } catch (_: Exception) { feedback = "selection_invalid" }
     }
     LaunchedEffect(profile, input, receivedValid, exampleZoneValid) {
-        preview = null; raw = null; previewBusy = true; checks = emptyList()
+        preview = null; raw = null; previewBusy = true
         delay(250)
         try {
             if (receivedValid && exampleZoneValid) {
@@ -310,13 +312,13 @@ fun ProfileEditorDialog(
                                 }
                                 OutlinedButton(enabled = !checking && profile.examples.isNotEmpty(), modifier = Modifier.testTag("profile-check-examples"), onClick = { val checkedProfile = profile; scope.launch {
                                     checking = true
-                                    try { val results = withContext(Dispatchers.Default) { ProfilePreview.checkExamples(checkedProfile) }; checks = if (profile == checkedProfile) results else emptyList() }
+                                    try { val results = withContext(Dispatchers.Default) { ProfilePreview.checkExamples(checkedProfile) }; checkedProfileSnapshot = checkedProfile; checks = results }
                                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                                     catch (_: Exception) { feedback = "preview_failed" }
                                     finally { checking = false }
                                 } }) { Text(tr("Alle gespeicherten Beispiele testen", "Test all saved examples")) }
                                 if (checking) LinearProgressIndicator(Modifier.fillMaxWidth())
-                                checks.forEachIndexed { index, check -> Text((if (check.passed) "✓ " else "! ") + check.name + "\n" + check.details.joinToString("\n"), modifier = Modifier.testTag("profile-example-check-$index"), color = if (check.passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+                                checks.takeIf { checkedProfileSnapshot == profile }.orEmpty().forEachIndexed { index, check -> Text((if (check.passed) "✓ " else "! ") + check.name + "\n" + check.details.joinToString("\n"), modifier = Modifier.testTag("profile-example-check-$index"), color = if (check.passed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
                             }
                             3 -> {
                                 WorkText(tr("Profilname", "Profile name"), profile.name) { profile = profile.copy(name = it.take(100)) }

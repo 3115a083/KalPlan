@@ -67,7 +67,12 @@ class AppSmokeTest {
         compose.onNodeWithText("Stable input").performClick()
         val field = compose.onNode(hasSetTextAction())
         for (character in "Alpha") field.performTextInput(character.toString())
+        // Let the real API-26 IME finish opening before changing the selection.
+        // A late platform focus/IME event otherwise moves the test cursor to the end.
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
         field.performTextInputSelection(TextRange(2))
+        field.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange, TextRange(2)))
         for (character in "XYZ") field.performTextInput(character.toString())
         field.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("AlXYZpha")))
         field.assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.TextSelectionRange, TextRange(5)))
