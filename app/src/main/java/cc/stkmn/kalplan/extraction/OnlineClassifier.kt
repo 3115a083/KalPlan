@@ -50,6 +50,8 @@ class OnlineClassifier {
         structuredValue
             ?.takeIf { it.isNotBlank() }
             ?.let { value ->
+                if (value.trim().equals("Ort", true) || value.trim().equals("ONSITE", true))
+                    return MeetingModeResult(MeetingMode.ONSITE, 0.99, value)
                 classifyText(value, structured = true)?.let { return it }
             }
 

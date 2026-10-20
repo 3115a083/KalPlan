@@ -55,6 +55,9 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
     var accountEdit by remember { mutableStateOf<MailAccount?>(null) }
     var newAccount by remember { mutableStateOf(false) }
     var profileJson by rememberSaveable { mutableStateOf<String?>(null) }
+    var profileEditId by rememberSaveable { mutableStateOf<String?>(null) }
+    val profileEdit = state.profiles.firstOrNull { it.id == profileEditId }
+    var newProfile by rememberSaveable { mutableStateOf(false) }
     var profileError by remember { mutableStateOf("") }
     var draft by remember(state.settings) { mutableStateOf(state.settings) }
     var duration by remember(state.settings) { mutableStateOf(draft.defaultDuration.toString()) }
@@ -105,11 +108,12 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         SectionTitle(tr("Extraktionsprofile", "Extraction profiles"))
         state.profiles.forEach { p ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { profileJson = ExtractionProfileCodec().encode(p) }) { Text(p.name) }
+                TextButton(onClick = { profileEditId = p.id }) { Text(p.name) }
                 TextButton(onClick = { exportJson = ExtractionProfileCodec().encode(p); export.launch("KalPlan-${p.id}.json") }) { Text(tr("Export", "Export")) }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { newProfile = true }) { Text(tr("Profil erstellen", "Create profile")) }
             OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }) { Text(tr("Import", "Import")) }
             TextButton(onClick = { profileJson = "" }) { Text(tr("JSON bearbeiten", "Edit JSON")) }
         }
@@ -156,7 +160,7 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         EditField(tr("Absagevorlage", "Decline template"), draft.declineTemplate) { draft = draft.copy(declineTemplate = it) }
         Text("{date}, {time}, {subject}, {sender}", style = MaterialTheme.typography.bodySmall)
         Text(tr("Kalenderbeschreibung: FULL überträgt den ganzen Mailtext in deinen Kalender.", "Calendar description: FULL copies the entire email text into your calendar."))
-        ChoiceRow(listOf("NONE", "FULL", "EXCLUDE", "EXCERPTS", "TEMPLATE"), draft.reservationDescription) { draft = draft.copy(reservationDescription = it) }
+        ChoiceRow(listOf("NONE", "FULL", "EXCLUDE", "EXCERPTS", "TEMPLATE", "PROFILE"), draft.reservationDescription, label = { if (it == "PROFILE") tr("Extrahierte Beschreibung", "Extracted description") else it }) { draft = draft.copy(reservationDescription = it) }
         if (draft.reservationDescription == "TEMPLATE") EditField(tr("Beschreibungsvorlage", "Description template"), draft.reservationTemplate) { draft = draft.copy(reservationTemplate = it) }
         if (draft.reservationDescription == "EXCLUDE") EditField(tr("Ausgeschlossene Textblöcke, getrennt durch ||", "Excluded text blocks, separated by ||"), draft.reservationExcludeBlocks.joinToString("||")) { draft = draft.copy(reservationExcludeBlocks = it.split("||")) }
         if (draft.reservationDescription == "EXCERPTS") EditField(tr("Textausschnitte, getrennt durch ||", "Excerpts, separated by ||"), draft.reservationExcerpts.joinToString("||")) { draft = draft.copy(reservationExcerpts = it.split("||")) }
@@ -249,6 +253,10 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
     }
     if (newAccount || accountEdit != null) AccountDialog(accountEdit, state, repository, busy, onRun,
         onDismiss = { newAccount = false; accountEdit = null })
+    if (newProfile || profileEdit != null) ProfileEditorDialog(profileEdit, labels = state.settings.labels.map { it.name }, availableInputs = profileMailInputs(state.requests),
+        onDismiss = { newProfile = false; profileEditId = null }, onSave = { saved ->
+            onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == saved.id } + saved) } }; newProfile = false; profileEditId = null
+        }, onDelete = profileEdit?.let { old -> { onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == old.id }) } }; profileEditId = null } })
     profileJson?.let { json ->
         AlertDialog(onDismissRequest = { profileJson = null }, title = { Text(tr("Profil validieren", "Validate profile")) }, text = {
             Column(Modifier.verticalScroll(rememberScrollState())) { EditField("JSON", json) { profileJson = it }; Text(profileError, color = MaterialTheme.colorScheme.error) }

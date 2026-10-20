@@ -120,17 +120,18 @@ class ReplyCoordinator(private val context: Context, private val repository: App
             try {
                 val candidate = requireNotNull(request.candidate)
                 val description = when (settings.reservationDescription) {
+                    "PROFILE" -> request.extractedDescription
                     "FULL" -> request.body
                     "EXCLUDE" -> settings.reservationExcludeBlocks.fold(request.body) { text, block -> if (block.isBlank()) text else text.replace(block, "") }
                     "EXCERPTS" -> settings.reservationExcerpts.filter { it.isNotBlank() && request.body.contains(it) }.joinToString("\n")
-                    "TEMPLATE" -> settings.reservationTemplate.replace("{id}", request.id).replace("{subject}", request.subject)
+                    "TEMPLATE" -> cc.stkmn.kalplan.extraction.ProfileTemplate.render(settings.reservationTemplate.replace("{id}", request.id).replace("{subject}", request.subject)
                         .replace("{date}", Instant.ofEpochMilli(requireNotNull(candidate.startMillis)).atZone(java.time.ZoneId.systemDefault()).toLocalDate().format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.SHORT).withLocale(java.util.Locale.getDefault())))
-                        .replace("{time}", Instant.ofEpochMilli(requireNotNull(candidate.startMillis)).atZone(java.time.ZoneId.systemDefault()).toLocalTime().toString())
+                        .replace("{time}", Instant.ofEpochMilli(requireNotNull(candidate.startMillis)).atZone(java.time.ZoneId.systemDefault()).toLocalTime().toString()), request.extractedFields)
                     else -> "KalPlan-ID: ${request.id}"
                 }
                 val eventId = AndroidReservationWriter(context).createReservation(ReservationDraft(settings.reservationCalendarId,
                     Instant.ofEpochMilli(requireNotNull(candidate.startMillis)), Instant.ofEpochMilli(requireNotNull(candidate.endMillis)),
-                    "[Reserviert] " + request.labels.firstOrNull().orEmpty().ifBlank { request.subject }.take(120),
+                    "[Reserviert] " + request.extractedTitle.ifBlank { request.labels.firstOrNull().orEmpty().ifBlank { request.subject } }.take(120),
                     if (candidate.mode == "ONLINE") settings.originAddress else candidate.location, description.take(100_000)))
                 repository.request(id) { it.copy(status = "RESERVED", reservationEventId = eventId) }
             } catch (error: Exception) {

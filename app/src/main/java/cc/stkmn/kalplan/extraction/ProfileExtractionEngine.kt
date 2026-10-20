@@ -52,7 +52,22 @@ class ProfileExtractionEngine {
             }
 
             val result = try {
-                extractOne(source, rule, profile.parseDirection)
+                val selectors = listOfNotNull(rule.selector) + rule.variants
+                val matches = buildList {
+                    if (rule.selector == null) extractOne(source, rule, profile.parseDirection)?.let { add(it) }
+                    selectors.forEach { selector ->
+                        FieldSelectorEngine.find(source.take(512_000), selector).forEach { match ->
+                            var value = match.value
+                            rule.transforms.forEach { value = applyTransform(value, it); require(value.length <= 512_000) }
+                            add(ExtractOneResult(value, match.matchedText, match.start, match.end))
+                        }
+                    }
+                }.distinctBy { Triple(it.value, it.startIndex, it.endIndexExclusive) }
+                if (selectors.isNotEmpty() && matches.map { it.value }.distinct().size > 1) {
+                    issues += ExtractionIssue("conflicting_field_matches", "Mehrere unterschiedliche Treffer für '" +
+                        rule.displayName.ifBlank { rule.key } + "'. Quelle oder Varianten eingrenzen.", IssueSeverity.NEEDS_REVIEW, rule.key)
+                }
+                if (profile.parseDirection == ParseDirection.TOP_DOWN) matches.firstOrNull() else matches.lastOrNull()
             } catch (error: Exception) {
                 issues += ExtractionIssue(
                     code = "invalid_rule",
@@ -77,6 +92,12 @@ class ProfileExtractionEngine {
             }
 
             rawValues[rule.key] = result.value
+            if (result.value.isBlank() && rule.required) {
+                issues += ExtractionIssue("required_field_empty", "Pflichtfeld ist vorhanden, aber leer.", IssueSeverity.NEEDS_REVIEW, rule.key)
+            }
+            if (result.value.isNotBlank() && !validType(result.value, rule.dataType, input, profile.locale)) {
+                issues += ExtractionIssue("invalid_field_type", "Feldwert passt nicht zum gewählten Datentyp.", IssueSeverity.NEEDS_REVIEW, rule.key)
+            }
             values[rule.key] = ExtractedValue(
                 key = rule.key,
                 semantic = rule.semantic,
@@ -152,6 +173,18 @@ class ProfileExtractionEngine {
                 SafePattern.compile(pattern, transform.ignoreCase).matcher(value).replaceAll(transform.replacement)
             }
         }
+    }
+
+    private fun validType(value: String, type: ProfileFieldType, input: ExtractionInput, locale: TemporalLocale): Boolean = when (type) {
+        ProfileFieldType.NUMBER -> value.trim().replace(',', '.').toBigDecimalOrNull() != null
+        ProfileFieldType.EMAIL -> Regex("[^\\s@]+@[^\\s@]+\\.[^\\s@]+").matches(value.trim())
+        ProfileFieldType.DATE -> FlexibleTemporalParser().parse(value, "", locale = locale,
+            reference = java.time.ZonedDateTime.ofInstant(input.receivedAt, input.zoneId)).candidates.isNotEmpty()
+        ProfileFieldType.TIME -> FlexibleTemporalParser().parse("2026-01-01", value, locale = locale,
+            reference = java.time.ZonedDateTime.ofInstant(input.receivedAt, input.zoneId)).candidates.any { it.startTime != null }
+        ProfileFieldType.DURATION -> FlexibleTemporalParser().parse("2026-01-01", "", value, locale,
+            java.time.ZonedDateTime.ofInstant(input.receivedAt, input.zoneId)).durationMinutes != null
+        else -> true
     }
 
     private fun builtIns(input: ExtractionInput): Map<String, String> = mapOf(

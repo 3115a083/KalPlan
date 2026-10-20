@@ -358,66 +358,6 @@ fun AttachmentRuleDialog(existing: AttachmentRule?, onDismiss: () -> Unit, onSav
 }
 
 @Composable
-fun ProfileEditorDialog(existing: ExtractionProfile?, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit, onDelete: (() -> Unit)?) {
-    var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
-    var enabled by rememberSaveable { mutableStateOf(existing?.enabled ?: true) }
-    var subjectContains by rememberSaveable { mutableStateOf("") }
-    var senderContains by rememberSaveable { mutableStateOf("") }
-    var duration by rememberSaveable { mutableStateOf(existing?.defaultDurationMinutes?.toString().orEmpty()) }
-    var locale by rememberSaveable { mutableStateOf(existing?.locale?.name ?: "DE_DE") }
-    var rules by remember { mutableStateOf(existing?.extractors ?: emptyList()) }
-    var prefix by rememberSaveable { mutableStateOf("") }
-    var semantic by rememberSaveable { mutableStateOf("DATE") }
-    var source by rememberSaveable { mutableStateOf("BODY") }
-    var required by rememberSaveable { mutableStateOf(false) }
-    val valid = name.isNotBlank() && rules.isNotEmpty() && (duration.isBlank() || duration.toIntOrNull()?.let { it in 1..10080 } == true)
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(if (existing == null) tr("Profil erstellen", "Create profile") else tr("Profil bearbeiten", "Edit profile")) }, text = {
-        Column(Modifier.heightIn(max = 640.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            StableTextField(name, { name = it.take(100) }, label = { Text(tr("Profilname", "Profile name")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            ToggleRow(tr("Aktiv", "Enabled"), enabled) { enabled = it }
-            Text(tr("Wann passt das Profil?", "When does this profile apply?"), style = MaterialTheme.typography.titleSmall)
-            Text(tr("Die Zuordnung zu einem Mailordner bleibt die zuverlässigste Auswahl. Diese optionalen Merkmale helfen bei mehreren Profilen.", "Assigning a profile to a mail folder is the most reliable selection. These optional traits help with multiple profiles."), style = MaterialTheme.typography.bodySmall)
-            StableTextField(subjectContains, { subjectContains = it.take(200) }, label = { Text(tr("Betreff enthält", "Subject contains")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            StableTextField(senderContains, { senderContains = it.take(320) }, label = { Text(tr("Absender enthält", "Sender contains")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            if (existing?.matchers?.isNotEmpty() == true && subjectContains.isBlank() && senderContains.isBlank()) Text(tr("Bestehende Profilmerkmale bleiben unverändert.", "Existing profile traits remain unchanged."), style = MaterialTheme.typography.bodySmall)
-            Text(tr("Erkannte Felder", "Extracted fields"), style = MaterialTheme.typography.titleSmall)
-            rules.forEach { rule ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Text(rule.sampleLabel ?: rule.key); Text(semanticName(rule.semantic.name) + " · " + sourceName(rule.source.name) + if (rule.required) " · " + tr("Pflicht", "required") else "", style = MaterialTheme.typography.bodySmall) }
-                    IconButton(onClick = { rules = rules.filterNot { it.id == rule.id } }) { Icon(Icons.Outlined.Delete, null) }
-                }
-            }
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(tr("Feld hinzufügen", "Add field"), fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
-                    Text(tr("Trage die sichtbare Bezeichnung vor dem Wert ein, zum Beispiel „Termin“ oder „Ort“.", "Enter the visible label before the value, for example “Date” or “Location”."), style = MaterialTheme.typography.bodySmall)
-                    StableTextField(prefix, { prefix = it.take(100) }, label = { Text(tr("Bezeichnung in der Mail", "Label in the email")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic, label = { semanticName(it) }) { semantic = it }
-                    ChoiceRow(listOf("BODY", "SUBJECT"), source, label = { sourceName(it) }) { source = it }
-                    ToggleRow(tr("Pflichtfeld", "Required field"), required) { required = it }
-                    OutlinedButton(enabled = prefix.isNotBlank(), onClick = {
-                        val key = GuidedRuleFactory.sanitizeKey(prefix).ifBlank { "field_${rules.size + 1}" }
-                        val regex = if (source == "SUBJECT") "(?s)^\\s*(.+?)\\s*$" else "(?m)^\\s*" + Regex.escape(prefix.trim()) + "\\s*[:=–-]\\s*(.+?)\\s*$"
-                        rules = rules + ExtractorRule("visual_${UUID.randomUUID()}", key, SemanticField.valueOf(semantic), regex, required = required, source = InputSource.valueOf(source), sampleLabel = prefix.trim())
-                        prefix = ""; required = false
-                    }) { Icon(Icons.Outlined.Add, null); Text(tr("Feld hinzufügen", "Add field")) }
-                }
-            }
-            StableTextField(duration, { duration = it.filter(Char::isDigit).take(5) }, label = { Text(tr("Optionale Standarddauer, Minuten", "Optional default duration, minutes")) }, singleLine = true)
-            ChoiceRow(listOf("DE_DE", "EN_US"), locale, label = { if (it == "EN_US") "English (US)" else "Deutsch (DE)" }) { locale = it }
-            if (onDelete != null) TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Icon(Icons.Outlined.Delete, null); Text(tr("Profil löschen", "Delete profile")) }
-        }
-    }, confirmButton = { TextButton(enabled = valid, onClick = {
-        val matchers = if (subjectContains.isBlank() && senderContains.isBlank()) existing?.matchers.orEmpty() else buildList {
-            if (subjectContains.isNotBlank()) add(MatcherRule("visual_subject", Regex.escape(subjectContains.trim()), InputSource.SUBJECT))
-            if (senderContains.isNotBlank()) add(MatcherRule("visual_sender", Regex.escape(senderContains.trim()), InputSource.SENDER))
-        }
-        val saved = (existing ?: ExtractionProfile(id = UUID.randomUUID().toString(), name = name.trim())).copy(name = name.trim(), enabled = enabled, matchers = matchers, extractors = rules, defaultDurationMinutes = duration.toIntOrNull(), locale = TemporalLocale.valueOf(locale))
-        if (ProfileValidator().validate(saved).isEmpty()) onSave(saved)
-    }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
-}
-
-@Composable
 private fun LabelColorPicker(selected: String, onSelect: (String) -> Unit) {
     val colors = listOf("6750A4", "4F52C9", "2457C5", "006B62", "168A55", "3B7A57", "7A8B2E", "B26A00", "E56B1F", "C2415B", "A33B20", "8055A5", "35618D", "5D6B78")
     var customOpen by rememberSaveable { mutableStateOf(false) }
@@ -475,6 +415,8 @@ private fun CustomLabelColorDialog(selected: String, onDismiss: () -> Unit, onSe
 @Composable internal fun semanticName(value: String): String = when(value) {
     "DATE" -> tr("Datum", "Date"); "TIME" -> tr("Beginn", "Start time"); "END_TIME" -> tr("Ende", "End time")
     "DURATION" -> tr("Dauer", "Duration"); "LOCATION" -> tr("Ort", "Location"); "ONLINE_OR_LOCATION" -> tr("Online oder Ort", "Online or location")
+    "ONLINE" -> tr("Terminart", "Meeting mode"); "POSTAL_CODE" -> tr("Postleitzahl", "Postal code"); "CITY" -> tr("Stadt", "City")
+    "STREET" -> tr("Straße und Hausnummer", "Street and number"); "CUSTOM" -> tr("Eigene Information", "Custom information")
     else -> tr("Titel", "Title")
 }
 @Composable internal fun sourceName(value: String): String = if (value == "SUBJECT") tr("Betreff", "Subject") else tr("Mailtext", "Email body")

@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.dp
 import cc.stkmn.kalplan.data.*
 
 @Composable
-fun SelectMenu(value: String, choices: List<String>, label: @Composable (String) -> String, onSelect: (String) -> Unit) {
+fun SelectMenu(value: String, choices: List<String>, label: @Composable (String) -> String = { it }, onSelect: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         OutlinedButton(onClick = { open = true }) { Text(label(value)) }

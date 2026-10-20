@@ -5,6 +5,7 @@ class MailTextNormalizer {
         select("script,style,iframe,object").remove()
         select("br").append("\n")
         select("p,div,tr,li").prepend("\n")
+        select("td,th").after("\t")
     }.wholeText()
 
     fun normalize(input: ExtractionInput): ExtractionInput = input.copy(
@@ -31,7 +32,7 @@ class MailTextNormalizer {
         text = if (preserveNewlines) {
             text.lineSequence()
                 .joinToString("\n") { line ->
-                    line.replace(Regex("[\\p{Zs}\\t]+"), " ").trimEnd()
+                    line.replace(Regex("[\\p{Zs}]+"), " ").trimEnd()
                 }
                 .replace(Regex("\n{4,}"), "\n\n\n")
                 .trim()

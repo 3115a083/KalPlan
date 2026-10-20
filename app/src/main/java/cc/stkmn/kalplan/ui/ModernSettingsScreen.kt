@@ -48,8 +48,9 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     var newAccount by remember { mutableStateOf(false) }
     var labelEdit by remember { mutableStateOf<LabelPolicy?>(null) }
     var newLabel by remember { mutableStateOf(false) }
-    var profileEdit by remember { mutableStateOf<ExtractionProfile?>(null) }
-    var newProfile by remember { mutableStateOf(false) }
+    var profileEditId by rememberSaveable { mutableStateOf<String?>(null) }
+    val profileEdit = state.profiles.firstOrNull { it.id == profileEditId }
+    var newProfile by rememberSaveable { mutableStateOf(false) }
     var valueOpen by remember { mutableStateOf(false) }
     var presetEdit by remember { mutableStateOf<FlatFeePreset?>(null) }
     var newPreset by remember { mutableStateOf(false) }
@@ -107,7 +108,7 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
                 }
                 OutlinedButton(onClick = { newAccount = true }, enabled = !busy) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Mailkonto", "Mail account")) }
                 HorizontalDivider()
-                state.profiles.forEach { profile -> SettingItem(profile.name, tr("Visuelles Extraktionsprofil", "Visual extraction profile"), onClick = { profileEdit = profile }) }
+                state.profiles.forEach { profile -> SettingItem(profile.name, tr("Visuelles Extraktionsprofil", "Visual extraction profile"), onClick = { profileEditId = profile.id }) }
                 OutlinedButton(onClick = { newProfile = true }) { Icon(Icons.Outlined.Add, null); Spacer(Modifier.width(6.dp)); Text(tr("Profil", "Profile")) }
             }
         }
@@ -224,9 +225,9 @@ fun SettingsScreen(state: AppData, repository: AppRepository, busy: Boolean, onR
     if (newLabel || labelEdit != null) LabelEditorDialog(labelEdit, state.settings.value, state.settings.flatFeePresets, onDismiss = { newLabel = false; labelEdit = null }, onSave = { saved ->
         updateSettings { s -> s.copy(labels = s.labels.filterNot { it.name == labelEdit?.name } + saved) }; newLabel = false; labelEdit = null
     }, onDelete = labelEdit?.let { old -> { updateSettings { s -> s.copy(labels = s.labels.filterNot { it.name == old.name }) }; labelEdit = null } })
-    if (newProfile || profileEdit != null) ProfileEditorDialog(profileEdit, onDismiss = { newProfile = false; profileEdit = null }, onSave = { saved ->
-        onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == saved.id } + saved) } }; newProfile = false; profileEdit = null
-    }, onDelete = profileEdit?.let { old -> { onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == old.id }) } }; profileEdit = null } })
+    if (newProfile || profileEdit != null) ProfileEditorDialog(profileEdit, labels = state.settings.labels.map { it.name }, availableInputs = profileMailInputs(state.requests), onDismiss = { newProfile = false; profileEditId = null }, onSave = { saved ->
+        onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == saved.id } + saved) } }; newProfile = false; profileEditId = null
+    }, onDelete = profileEdit?.let { old -> { onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == old.id }) } }; profileEditId = null } })
     if (valueOpen) ValueEditorDialog(state.settings.value, state.settings.flatFeePresets, onDismiss = { valueOpen = false }) { value -> updateSettings { it.copy(value = value) }; valueOpen = false }
     if (newPreset || presetEdit != null) FlatFeePresetDialog(presetEdit, onDismiss = { newPreset = false; presetEdit = null }, onSave = { saved ->
         updateSettings { it.copy(flatFeePresets = it.flatFeePresets.filterNot { old -> old.id == saved.id } + saved) }; newPreset = false; presetEdit = null

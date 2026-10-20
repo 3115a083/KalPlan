@@ -100,8 +100,13 @@ class FlexibleTemporalParser {
     ): TemporalParseResult {
         val rules = rules(locale)
         val issues = mutableListOf<ExtractionIssue>()
-        val dates = findDates(dateText, reference.toLocalDate(), rules, issues)
-        val relation = relationFor(dateText, dates)
+        val dateMentions = findDates(dateText, reference.toLocalDate(), rules, issues)
+        // Keep every mention for masking, but produce one candidate per actual day.
+        // Prefer explicit year evidence when a relative word repeats the same date.
+        val dates = dateMentions.groupBy { it.date }.values.map { mentions ->
+            mentions.firstOrNull { it.explicitYear } ?: mentions.first()
+        }
+        val relation = if (dates.size <= 1) DateRelation.SINGLE else relationFor(dateText, dateMentions)
 
         if (dates.any { it.suspiciousYear }) {
             issues += ExtractionIssue(
@@ -112,7 +117,7 @@ class FlexibleTemporalParser {
         }
 
         val dateTokensInsideTimeText = if (timeText === dateText || timeText == dateText) {
-            dates
+            dateMentions
         } else {
             findDates(
                 text = timeText,
@@ -252,17 +257,20 @@ class FlexibleTemporalParser {
         issues: MutableList<ExtractionIssue>
     ): List<DateToken> {
         val relative = relativeDates(text, referenceDate, rules)
-        if (relative.isNotEmpty()) return relative
-
-        val iso = isoDate.findAll(text).mapNotNull { match ->
+        val absolute = mutableListOf<DateToken>()
+        val isoMatches = isoDate.findAll(text).toList()
+        val iso = isoMatches.mapNotNull { match ->
             val year = match.groupValues[1].toInt()
             val month = match.groupValues[2].toInt()
             val day = match.groupValues[3].toInt()
             buildToken(year, month, day, match.range, match.value, true, referenceDate)
         }.toList()
-        if (iso.isNotEmpty()) return iso.distinctBy { it.date to it.range }
+        absolute += iso
 
-        val numericMatches = numericDate.findAll(text).toList()
+        // Never reinterpret a fragment of an ISO date as a DMY/MDY date.
+        val numericMatches = numericDate.findAll(text).filter { numeric ->
+            isoMatches.none { isoMatch -> numeric.range.first <= isoMatch.range.last && isoMatch.range.first <= numeric.range.last }
+        }.toList()
         if (numericMatches.isNotEmpty()) {
             val explicitYears = numericMatches.mapNotNull {
                 it.groupValues[3].takeIf(String::isNotBlank)?.let { y -> resolveExplicitYear(y) }
@@ -310,7 +318,7 @@ class FlexibleTemporalParser {
                     severity = IssueSeverity.WARNING
                 )
             }
-            if (parsed.isNotEmpty()) return parsed.distinctBy { it.date to it.range }
+            absolute += parsed
         }
 
         if (rules.germanWords) {
@@ -323,7 +331,7 @@ class FlexibleTemporalParser {
                 else inferYear(month, day, referenceDate)
                 buildToken(year, month, day, match.range, match.value, explicit, referenceDate)
             }.toList()
-            if (named.isNotEmpty()) return named.distinctBy { it.date to it.range }
+            absolute += named
         }
 
         if (rules.englishWords) {
@@ -336,9 +344,11 @@ class FlexibleTemporalParser {
                 else inferYear(month, day, referenceDate)
                 buildToken(year, month, day, match.range, match.value, explicit, referenceDate)
             }.toList()
-            if (dmy.isNotEmpty()) return dmy.distinctBy { it.date to it.range }
+            absolute += dmy
 
-            val mdy = englishMdyDate.findAll(text).mapNotNull { match ->
+            val mdy = englishMdyDate.findAll(text).filter { match ->
+                absolute.none { token -> match.range.first <= token.range.last && token.range.first <= match.range.last }
+            }.mapNotNull { match ->
                 val month = englishMonth(match.groupValues[1]) ?: return@mapNotNull null
                 val day = match.groupValues[2].toInt()
                 val yearText = match.groupValues[3]
@@ -347,13 +357,19 @@ class FlexibleTemporalParser {
                 else inferYear(month, day, referenceDate)
                 buildToken(year, month, day, match.range, match.value, explicit, referenceDate)
             }.toList()
-            if (mdy.isNotEmpty()) return mdy.distinctBy { it.date to it.range }
+            absolute += mdy
         }
 
-        val weekday = weekdayDates(text, referenceDate, rules)
-        if (weekday.isNotEmpty()) return weekday
-
-        return emptyList()
+        if (relative.isNotEmpty() && absolute.isNotEmpty() &&
+            relative.map { it.date }.toSet() != absolute.map { it.date }.toSet()) {
+            issues += ExtractionIssue(
+                code = "relative_explicit_date_conflict",
+                message = "Relative and explicit date mentions disagree and require confirmation.",
+                severity = IssueSeverity.NEEDS_REVIEW
+            )
+        }
+        val mentions = (absolute + relative).sortedBy { it.range.first }.distinctBy { it.date to it.range }
+        return mentions.ifEmpty { weekdayDates(text, referenceDate, rules) }
     }
 
     private fun relativeDates(

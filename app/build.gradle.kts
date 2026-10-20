@@ -17,8 +17,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         targetSdk = 37
         manifestPlaceholders["appAuthRedirectScheme"] = "cc.stkmn.kalplan"
-        versionCode = 8
-        versionName = "0.6.1-dev"
+        versionCode = 9
+        versionName = "0.7.0-dev"
     }
 
     buildTypes {
