@@ -224,18 +224,34 @@ class AppSmokeTest {
         compose.onNodeWithTag("profile-tab-2").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Profile rule: AB-17").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("profile-expected").performScrollTo().performTextReplacement("AB-18")
-        compose.onNodeWithTag("profile-save-expected").performScrollTo().performClick()
-        compose.onNodeWithTag("profile-check-examples").performScrollTo().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("profile-example-check-0").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("profile-save-expected").performScrollTo().assertIsEnabled().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        // Exercise the enabled action directly: asynchronous preview/IME layout can move
+        // the scrolled button between pointer down and up on the API-26 emulator.
+        compose.onNodeWithTag("profile-check-examples").performScrollTo().assertIsEnabled().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("profile-example-check-0").fetchSemanticsNodes().isNotEmpty() }
+        } catch (failure: Throwable) {
+            screenshot("profile-example-check-failure")
+            android.util.Log.e("KalPlanSmoke", compose.onRoot(useUnmergedTree = true).printToString())
+            throw failure
+        }
         compose.onNodeWithTag("profile-example-check-0").assertTextContains("AB-18", substring = true)
         compose.activityRule.scenario.recreate()
         compose.waitUntil(15_000) { compose.onAllNodesWithTag("profile-expected").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("profile-expected").assert(SemanticsMatcher.expectValue(androidx.compose.ui.semantics.SemanticsProperties.EditableText, androidx.compose.ui.text.AnnotatedString("AB-18")))
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Profile rule: AB-17").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithTag("profile-expected").performScrollTo().performTextReplacement("AB-17")
-        compose.onNodeWithTag("profile-save-expected").performScrollTo().performClick()
-        compose.onNodeWithTag("profile-check-examples").performScrollTo().performClick()
-        compose.waitUntil(10_000) { compose.onAllNodesWithTag("profile-example-check-0").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithTag("profile-save-expected").performScrollTo().assertIsEnabled().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        // Exercise the enabled action directly: asynchronous preview/IME layout can move
+        // the scrolled button between pointer down and up on the API-26 emulator.
+        compose.onNodeWithTag("profile-check-examples").performScrollTo().assertIsEnabled().performSemanticsAction(androidx.compose.ui.semantics.SemanticsActions.OnClick) { it() }
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithTag("profile-example-check-0").fetchSemanticsNodes().isNotEmpty() }
+        } catch (failure: Throwable) {
+            screenshot("profile-example-check-failure")
+            android.util.Log.e("KalPlanSmoke", compose.onRoot(useUnmergedTree = true).printToString())
+            throw failure
+        }
         compose.onNodeWithTag("profile-example-check-0").assertTextContains("✓", substring = true)
         screenshot("profile-workbench-preview")
         compose.onNodeWithTag("profile-tab-3").performClick()
