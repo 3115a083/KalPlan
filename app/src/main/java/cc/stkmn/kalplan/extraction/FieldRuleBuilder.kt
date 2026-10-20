@@ -6,6 +6,21 @@ import java.util.UUID
 /** Creates editable rules, never stores a selected example value as a future answer. */
 object FieldRuleBuilder {
     fun fromSelection(inputText: String, start: Int, end: Int, source: InputSource, key: String): FieldSelector {
+        val a = minOf(start, end).coerceIn(0, inputText.length)
+        val b = maxOf(start, end).coerceIn(0, inputText.length)
+        require(b > a) { "Markiere zuerst den gewünschten Wert." }
+        val marker = "KALPLAN_" + UUID.randomUUID().toString() + "_"
+        val begin = marker + "BEGIN"
+        val finish = marker + "END"
+        val tagged = inputText.substring(0, a) + begin + inputText.substring(a, b) + finish + inputText.substring(b)
+        val normalized = MailTextNormalizer().normalizeText(tagged, source != InputSource.SUBJECT && source != InputSource.SENDER)
+        val normalizedStart = normalized.indexOf(begin)
+        val normalizedEnd = normalized.indexOf(finish) - begin.length
+        val text = normalized.replace(begin, "").replace(finish, "")
+        return fromNormalizedSelection(text, normalizedStart, normalizedEnd, source, key)
+    }
+
+    private fun fromNormalizedSelection(inputText: String, start: Int, end: Int, source: InputSource, key: String): FieldSelector {
         require(key.isNotBlank() && source in InputSource.entries)
         val a = minOf(start, end).coerceIn(0, inputText.length)
         val b = maxOf(start, end).coerceIn(0, inputText.length)

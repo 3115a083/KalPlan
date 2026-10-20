@@ -187,7 +187,7 @@ fun ProfileEditorDialog(
     val sourceText = if (sourceChoice.startsWith("var:")) {
         val key = sourceChoice.removePrefix("var:")
         raw?.values?.get(key)?.value ?: when (key) { "body", "text" -> normalizedInput.body; "sender" -> normalizedInput.sender; "subject" -> normalizedInput.subject; "input" -> normalizedInput.combined; else -> "" }
-    } else normalizedInput.text(InputSource.valueOf(sourceChoice))
+    } else if (sourceChoice == "COMBINED") normalizedInput.combined else input.text(InputSource.valueOf(sourceChoice))
     SideEffect {
         val shown = sourceText.take(20_000)
         if (selection.text != shown) selection = selection.copy(text = shown,

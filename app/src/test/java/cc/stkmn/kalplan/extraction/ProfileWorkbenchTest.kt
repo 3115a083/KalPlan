@@ -187,4 +187,13 @@ class ProfileWorkbenchTest {
         assertNull(result.candidates.single().locationText)
         assertTrue(result.issues.none { it.code == "uncertain_heuristic_location" })
     }
+
+    @Test fun selectionFromRawDraftUsesNormalizedOffsetsWithoutChangingTheDraft() {
+        val draft = "\u200BBeschriftung:\u00a0\u00a0Köln\r\nNächste Zeile"
+        val a = draft.indexOf("Köln")
+        val selector = FieldRuleBuilder.fromSelection(draft, a, a + 4, InputSource.BODY, "city")
+        val result = KalPlanExtractionPipeline().extract(input("Beschriftung: Berlin\nNächste Zeile"), profile(field("city", "unused").copy(selector = selector)))
+        assertEquals("Berlin", result.fields["city"]?.value)
+        assertTrue(draft.startsWith("\u200B"))
+    }
 }
