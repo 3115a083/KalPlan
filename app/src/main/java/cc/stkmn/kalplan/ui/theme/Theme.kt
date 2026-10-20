@@ -162,7 +162,9 @@ fun KalPlanTheme(
                 val custom = Color(android.graphics.Color.parseColor("#" + primaryHex))
                 scheme.copy(primary = custom, onPrimary = readableContentColor(Color.White, custom))
             } else scheme,
-            content = content
-        )
+        ) {
+            SyncSystemBars()
+            content()
+        }
     }
 }

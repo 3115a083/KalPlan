@@ -24,6 +24,38 @@ import cc.stkmn.kalplan.ui.generateDebugCases
 @RunWith(AndroidJUnit4::class)
 class AppSmokeTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
+    @Test fun systemBarsFollowAppThemeInActivityAndFullScreenDialog() {
+        var dark by mutableStateOf(false)
+        var dialog by mutableStateOf(false)
+        var dialogWindow: android.view.Window? = null
+        compose.activity.runOnUiThread { compose.activity.setContent {
+            cc.stkmn.kalplan.ui.theme.KalPlanTheme(choice = cc.stkmn.kalplan.ui.theme.ThemeChoice.HIGH_CONTRAST, darkTheme = dark) {
+                androidx.compose.material3.Surface(Modifier.fillMaxSize()) { androidx.compose.material3.Text("System bar contrast") }
+                if (dialog) androidx.compose.ui.window.Dialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+                    cc.stkmn.kalplan.ui.theme.SyncSystemBars()
+                    val view = androidx.compose.ui.platform.LocalView.current
+                    SideEffect {
+                        var parent = view.parent
+                        while (parent != null && parent !is androidx.compose.ui.window.DialogWindowProvider) parent = parent.parent
+                        dialogWindow = (parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+                    }
+                    androidx.compose.material3.Surface(Modifier.fillMaxSize()) { androidx.compose.material3.Text("Dialog contrast", Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) }
+                }
+            }
+        } }
+        fun assertBars(window: android.view.Window, light: Boolean) = compose.runOnIdle {
+            val controller = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            org.junit.Assert.assertEquals(light, controller.isAppearanceLightStatusBars)
+            org.junit.Assert.assertEquals(light, controller.isAppearanceLightNavigationBars)
+        }
+        compose.waitForIdle(); assertBars(compose.activity.window, true); screenshot("system-bars-light")
+        compose.runOnIdle { dark = true }; compose.waitForIdle(); assertBars(compose.activity.window, false); screenshot("system-bars-dark")
+        compose.runOnIdle { dark = false; dialog = true }; compose.waitForIdle()
+        compose.runOnIdle { org.junit.Assert.assertNotNull(dialogWindow) }
+        assertBars(requireNotNull(dialogWindow), true); screenshot("system-bars-light-dialog")
+        compose.runOnIdle { dark = true }; compose.waitForIdle(); assertBars(requireNotNull(dialogWindow), false)
+        screenshot("system-bars-dark-dialog")
+    }
     @Test fun inputEditsKeepCaretAndCommitOnlyOnApply() {
         var saved = ""
         var commits = 0
