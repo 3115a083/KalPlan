@@ -60,7 +60,8 @@ class LocationHeuristicExtractor {
             val explicit = explicitCity.matchEntire(line)?.groupValues?.get(1)?.trim()
             val city = explicit ?: cityPhrase.findAll(line).map { it.groupValues[1].trim().trimEnd('.', ',', ';') }
                 .firstOrNull { it.lowercase() !in CITY_STOP_WORDS }
-            if (city != null) found += LocationHeuristicResult(city, if (explicit != null) 0.68 else 0.55, line.take(240))
+            if (city != null && city.lowercase() !in setOf("online", "remote", "ort", "vor ort", "onsite", "hybrid", "unknown"))
+                found += LocationHeuristicResult(city, if (explicit != null) 0.68 else 0.55, line.take(240))
         }
         fun normalized(value: String) = value.lowercase().replace(Regex("[,\\s]+"), " ").trim()
         val complete = found.filter { it.confidence >= 0.85 }.map { normalized(it.value) }

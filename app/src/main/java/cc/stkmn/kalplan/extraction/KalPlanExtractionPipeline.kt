@@ -62,7 +62,12 @@ class KalPlanExtractionPipeline(
         }
         val heuristicInput = normalizedInput.copy(body = normalizedInput.body.let { original ->
             // A deliberately separated informational region must not become a missing appointment field.
-            profile?.extractors.orEmpty().filter { it.semantic == SemanticField.CUSTOM && it.additionalSemantics.isEmpty() && it.sourceVariableKey == null }
+            profile?.extractors.orEmpty().filter {
+                it.sourceVariableKey == null && (
+                    it.semantic == SemanticField.CUSTOM && it.additionalSemantics.isEmpty() &&
+                        profile?.extractors.orEmpty().none { dependent -> dependent.sourceVariableKey == it.key } ||
+                    timeField == null && (it.semantic == SemanticField.END_TIME || it.semantic == SemanticField.DURATION))
+            }
                 .mapNotNull { fields[it.key]?.evidence?.takeIf { e -> e.source == InputSource.BODY && e.startIndex != null && e.endIndexExclusive != null } }
                 .sortedByDescending { it.startIndex }.fold(original) { text, evidence ->
                     val a = requireNotNull(evidence.startIndex).coerceIn(0, text.length)
@@ -99,6 +104,12 @@ class KalPlanExtractionPipeline(
                 timeField.value
             else ->
                 fallback(SemanticField.TIME)
+        }
+
+        if (usesTimeFallback && endTimeField?.value?.isNotBlank() == true) {
+            val guess = temporalParser.parse(dateText, timeText, locale = profile?.locale ?: TemporalLocale.DE_DE,
+                reference = ZonedDateTime.ofInstant(normalizedInput.receivedAt, normalizedInput.zoneId)).candidates.firstOrNull()?.startTime
+            timeText = guess?.let { "$it - ${endTimeField.value}" }.orEmpty()
         }
 
         // Fallback evidence from another appointment must never complete a structured record.

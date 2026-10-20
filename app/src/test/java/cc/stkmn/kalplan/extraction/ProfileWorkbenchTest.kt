@@ -171,4 +171,20 @@ class ProfileWorkbenchTest {
         assertEquals(AppointmentMode.ONSITE, result.candidates.single().mode)
         assertNull(result.candidates.single().locationText)
     }
+
+    @Test fun knownEndTimeCannotBeGuessedAsMissingStart() {
+        val p = profile(field("date", "Datum", SemanticField.DATE), field("end", "Endzeit", SemanticField.END_TIME))
+        val missingStart = KalPlanExtractionPipeline().extract(input("Datum: 19.10.2026\nEndzeit: 16:00"), p)
+        assertTrue(missingStart.candidates.all { it.localStartTime == null })
+        val foundStart = KalPlanExtractionPipeline().extract(input("Datum: 19.10.2026\nBeginn wäre um 13:00.\nEndzeit: 16:00"), p)
+        assertEquals(LocalTime.of(13, 0), foundStart.candidates.single().localStartTime)
+        assertEquals(LocalTime.of(16, 0), foundStart.candidates.single().localEndTime)
+    }
+
+    @Test fun onlineModeWordIsNotAHeuristicCity() {
+        val result = KalPlanExtractionPipeline().extract(input("Datum: 19.10.2026\nUhrzeit: 13:00-16:00\nOrt: Online"), profile())
+        assertEquals(AppointmentMode.ONLINE, result.candidates.single().mode)
+        assertNull(result.candidates.single().locationText)
+        assertTrue(result.issues.none { it.code == "uncertain_heuristic_location" })
+    }
 }
