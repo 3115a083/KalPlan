@@ -30,7 +30,7 @@ class AppSmokeTest {
         var dialogWindow: android.view.Window? = null
         compose.activity.runOnUiThread { compose.activity.setContent {
             cc.stkmn.kalplan.ui.theme.KalPlanTheme(choice = cc.stkmn.kalplan.ui.theme.ThemeChoice.HIGH_CONTRAST, darkTheme = dark) {
-                androidx.compose.material3.Surface(Modifier.fillMaxSize()) { androidx.compose.material3.Text("System bar contrast") }
+                androidx.compose.material3.Surface(Modifier.fillMaxSize()) { androidx.compose.material3.Text("System bar contrast", Modifier.windowInsetsPadding(WindowInsets.safeDrawing)) }
                 if (dialog) androidx.compose.ui.window.Dialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
                     cc.stkmn.kalplan.ui.theme.SyncSystemBars()
                     val view = androidx.compose.ui.platform.LocalView.current

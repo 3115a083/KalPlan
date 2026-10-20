@@ -2,7 +2,6 @@ package cc.stkmn.kalplan.ui.theme
 
 import android.content.Context
 import android.content.ContextWrapper
-import android.view.View
 import android.view.Window
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
