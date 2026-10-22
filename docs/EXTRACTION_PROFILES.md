@@ -1,6 +1,6 @@
 # Extraction profiles
 
-KalPlan profiles are versioned data. They contain matchers, extractor rules and semantic field mappings. They do not contain executable code.
+KalPlan profiles are versioned data. They contain matchers, extractor rules and semantic field mappings. They do not contain executable code. New profiles use schema 2; legacy schema 1 remains supported. See [the workbench review](REVIEW_0.7.0.md) for the current field model, correction flow and validation limits.
 
 The implementation is inspired by the proven profile/rule approach in ShareParser, with KalPlan-specific changes for uncertainty and multiple appointment candidates.
 

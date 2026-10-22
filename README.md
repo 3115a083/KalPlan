@@ -1,6 +1,6 @@
-# KalPlan 0.5.1-dev
+# KalPlan 0.7.1-dev
 
-This update improves multi-day calendar checks, missing-origin handling, saved profile reply templates and theme-aware text contrast. See [the focused review](docs/REVIEW_2026-10-18.md) for scope and verification limits.
+The profile workbench supports freely named fields, selectable source regions, recognition refinement, explicit expected-value examples and a shared extraction preview. Missing appointment data can be suggested by a bounded local heuristic fallback. Version 0.7.1 corrects spurious date/duration warnings for valid time ranges. See [the correction review](docs/REVIEW_0.7.1.md) and [the profile review](docs/REVIEW_0.7.0.md) for scope and verification limits.
 
 Android app for reviewing appointment requests, checking device calendars and planning replies. This branch turns the original scaffold into a functional development build using the Dispatcher design and icon 1.
 
@@ -9,13 +9,13 @@ Android app for reviewing appointment requests, checking device calendars and pl
 2. Enable debug mode with five quick taps on the centered footer and generate synthetic calendar-aware cases. Samples cannot send mail or create calendar entries.
 3. Add IMAP/SMTP accounts, app passwords or registered native OAuth public-client settings; select folders and create extraction profiles in the guided editor.
 4. Grant calendar read access and select calendars explicitly. Configure independently which private details can appear. Without calendars, productive acceptance is blocked.
-5. Configure origin, buffers, visual labels, reply templates and optional value estimates. A label can override individual price components while inheriting all others from the global rate.
+5. Configure origin, buffers, visual labels, reply templates and optional value estimates. Enabling a label price override makes empty numeric components zero; disabling the override uses global rates.
 6. Check both trip legs manually. Routing requires your own provider API key and explicit coordinates; it never runs automatically.
 7. Review a reply and confirm separately. Reservations are optional tentative entries after acknowledged sending, not confirmed bookings.
 
 Settings apply immediately. Design, language and light/dark mode are grouped together. Calendar-specific options open only when a calendar is enabled and remain editable by tapping that calendar. Synchronization supports an overnight quiet period. Declining discards locally by default; sending a decline message is an explicit opt-in.
 
-Notifications and a resizable scrollable Android widget open the review screen. IMAP source mail remains read-only. Attachments are downloaded only on request. There is intentionally no manual email text import: source context always stays tied to a real message, while uncertain extraction can be corrected with the original mail visible.
+Notifications and a resizable scrollable Android widget open the review screen. IMAP source mail remains read-only. Attachments are downloaded only on request. Users may paste a local profile test example without creating an inbox request. Recognition can be refined against explicitly saved examples while source mail stays unchanged.
 
 ## Build and validation
 Pinned Gradle wrapper, Java 17, Kotlin 2.4.10, AGP 9.4.0, target/compile API 37. CI performs unit tests, Android Lint, resolved-dependency OSV lookup, APK assembly and device smoke tests with screenshots on minimum/newest available emulator APIs.

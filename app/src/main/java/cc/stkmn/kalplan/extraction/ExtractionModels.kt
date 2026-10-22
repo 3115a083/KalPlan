@@ -32,6 +32,7 @@ enum class SemanticField {
     TITLE,
     POSTAL_CODE,
     CITY,
+    STREET,
     CUSTOM
 }
 
@@ -97,5 +98,6 @@ data class ExtractionResult(
     val fields: Map<String, ExtractedValue>,
     val labels: List<RequestLabel>,
     val candidates: List<AppointmentCandidate>,
-    val issues: List<ExtractionIssue>
+    val issues: List<ExtractionIssue>,
+    val description: String = ""
 )

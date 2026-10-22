@@ -43,7 +43,7 @@ object OAuthAccess {
                     }
                 }
             }
-            repository.saveOAuthState(accountId, state.jsonSerializeString())
+            repository.saveOAuthStateIfUnchanged(account, state.jsonSerializeString(), expectedState = saved)
             token
         } finally { service.dispose() }
     }

@@ -13,6 +13,40 @@ class KalPlanExtractionPipelineTest {
     private val pipeline = KalPlanExtractionPipeline()
 
     @Test
+    fun validFreeTextRangeHasNoSpuriousDateOrDurationWarning() {
+        val result = pipeline.extract(ExtractionInput("sender@example.invalid", "Appointment",
+            "Datum: 14.12.2026\nUhrzeit: 14:00-15:00\nOrt: Online",
+            Instant.parse("2026-10-19T08:00:00Z")), null)
+        assertEquals(1, result.candidates.size)
+        assertEquals(14, result.candidates.single().localStartTime?.hour)
+        assertEquals(15, result.candidates.single().localEndTime?.hour)
+        assertTrue(result.issues.none { it.code in setOf("invalid_date", "duration_unparsed") })
+    }
+
+    @Test
+    fun optionalDurationStillRecognizesAnExplicitFreeTextValue() {
+        val result = pipeline.extract(ExtractionInput("sender@example.invalid", "Appointment",
+            "Datum: 14.12.2026\nBeginn: 14:00\nDauer: 90 Minuten\nOrt: Online",
+            Instant.parse("2026-10-19T08:00:00Z")), null)
+        assertEquals(90, result.candidates.single().durationMinutes)
+        assertEquals(15, result.candidates.single().localEndTime?.hour)
+        assertEquals(30, result.candidates.single().localEndTime?.minute)
+        assertTrue(result.issues.none { it.code == "duration_unparsed" })
+    }
+
+    @Test
+    fun malformedConfiguredDurationStillRequiresValidation() {
+        val profile = ExtractionProfile(id = "duration-validation", name = "Duration validation", extractors = listOf(
+            ExtractorRule("duration", "duration", semantic = SemanticField.DURATION, regex = "Dauer: *([^\\n]+)")
+        ))
+        val result = pipeline.extract(ExtractionInput("sender@example.invalid", "Appointment",
+            "Datum: 14.12.2026\nUhrzeit: 14:00-15:00\nDauer: offen\nOrt: Online",
+            Instant.parse("2026-10-19T08:00:00Z")), profile)
+        assertEquals("offen", result.fields["duration"]?.value)
+        assertTrue(result.issues.any { it.code == "duration_unparsed" })
+    }
+
+    @Test
     fun structuredOnlineRequestUsesProfileEvidence() {
         val input = ExtractionInput(
             sender = "dispo@example.org",

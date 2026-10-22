@@ -26,6 +26,7 @@ class OAuthActivity : ComponentActivity() {
                 val expected = repository.oauthPending(accountId) ?: error("No pending authorization")
                 val request = AuthorizationRequest.jsonDeserialize(expected)
                 require(response.state == request.state && response.request.jsonSerializeString() == expected) { "OAuth request mismatch" }
+                val account = repository.data.value.accounts.first { it.id == accountId }
                 val state = AuthState(response, AuthorizationException.fromIntent(data))
                 val token = suspendCancellableCoroutine<TokenResponse> { continuation ->
                     service.performTokenRequest(response.createTokenExchangeRequest()) { tokenResponse, exception ->
@@ -36,8 +37,7 @@ class OAuthActivity : ComponentActivity() {
                     }
                 }
                 state.update(token, null)
-                repository.saveOAuthState(accountId, state.jsonSerializeString())
-                repository.clearOAuthPending(accountId)
+                repository.saveOAuthStateIfUnchanged(account, state.jsonSerializeString(), expectedPending = expected)
                 Toast.makeText(this@OAuthActivity, "OAuth verbunden / OAuth connected", Toast.LENGTH_LONG).show()
             } catch (_: Exception) { Toast.makeText(this@OAuthActivity, "OAuth fehlgeschlagen / OAuth failed", Toast.LENGTH_LONG).show() }
             finish()

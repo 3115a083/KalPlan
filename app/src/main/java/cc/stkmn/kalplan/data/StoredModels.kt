@@ -47,6 +47,7 @@ data class CalendarPrivacy(
     val showDescription: Boolean = false,
     val useHiddenLocationForRouting: Boolean = false,
     val travelCalendar: Boolean = false,
+    val colorHex: String = "",
     val travelTitleContains: String = ""
 )
 
@@ -56,6 +57,7 @@ data class ValueOverride(
     val travelCentsPerHour: Long? = null,
     val centsPerKm: Long? = null,
     val flatCents: Long? = null,
+    val flatFeePresetIds: List<String>? = null,
     val flatFeePresetId: String? = null,
     val billingStepMinutes: Int? = null,
     val roundUp: Boolean? = null,
@@ -78,6 +80,7 @@ data class LabelPolicy(
     val colorHex: String = "6750A4",
     val keywordMode: String = "ANY",
     val searchIn: String = "SUBJECT_AND_BODY",
+    val conditionGroups: List<LabelConditionGroup> = emptyList(),
     val valueOverride: ValueOverride? = null
 )
 
@@ -90,9 +93,11 @@ data class ValueSettings(
     val travelCentsPerHour: Long = 0,
     val centsPerKm: Long = 42,
     val flatCents: Long = 0,
+    val flatFeePresetIds: List<String> = emptyList(),
     val flatFeePresetId: String = "",
     val roundTrip: Boolean = false,
     val distanceBands: List<DistanceBand> = emptyList(),
+    val flatFeeComponents: List<FlatFeePreset> = emptyList(),
     val roundingMode: String = "UP"
 )
 @Serializable
@@ -103,7 +108,9 @@ data class FlatFeePreset(
     val id: String,
     val name: String,
     val flatCents: Long = 0,
-    val distanceBands: List<DistanceBand> = emptyList()
+    val distanceBands: List<DistanceBand> = emptyList(),
+    val appliesTo: String = "ORDER",
+    val replacesHourly: Boolean = false
 )
 
 @Serializable
@@ -115,6 +122,9 @@ data class Settings(
     val quietFrom: String = "",
     val quietUntil: String = "",
     val pausedWeekdays: Set<Int> = emptySet(),
+    // Missing fields in legacy JSON derive the equivalent explicit schedule.
+    val activeSyncWeekdays: Set<Int> = (1..7).filterNot { it in pausedWeekdays || pauseWeekends && it >= 6 }.toSet(),
+    val quietHoursEnabled: Boolean = quietFrom.isNotBlank() && quietUntil.isNotBlank(),
     val defaultDuration: Int = 60,
     val staleHours: Int = 72,
     val beforeBuffer: Int = 20,
@@ -124,6 +134,7 @@ data class Settings(
     val originAddress: String = "",
     val theme: String = "KALPLAN",
     val themeMode: String = "SYSTEM",
+    val swipeDisplayModel: String = "REQUEST_FIRST",
     val language: String = "SYSTEM",
     val primaryHex: String = "",
     val acceptTemplate: String = "Guten Tag,\n\nich kann den Termin {date} um {time} übernehmen. Bitte bestätigen Sie den Auftrag.\n\nMit freundlichen Grüßen",
@@ -139,6 +150,8 @@ data class Settings(
     val showInlineMailImages: Boolean = false,
     val routingProvider: String = "GOOGLE_MAPS",
     val routingDailyLimit: Int = 10,
+    val addressSuggestionsEnabled: Boolean = false,
+    val addressDailyLimit: Int = 30,
     val debug: Boolean = false,
     val debugTestAddress: String = "",
     val debugSendToTest: Boolean = false,
@@ -177,6 +190,10 @@ data class StoredRequest(
     val selectedCandidate: Int? = null,
     val issues: List<String> = emptyList(),
     val evidence: List<String> = emptyList(),
+    val extractedFields: Map<String, String> = emptyMap(),
+    val extractionProfileId: String? = null,
+    val extractedDescription: String = "",
+    val extractedTitle: String = "",
     val status: String = "NEW",
     val unclear: Boolean = true,
     val manual: Boolean = false,
@@ -217,3 +234,8 @@ data class AppData(
     val lastSyncMillis: Long? = null,
     val diagnostics: List<String> = emptyList()
 )
+
+@Serializable
+data class LabelCondition(val field: String = "BODY", val text: String, val operator: String = "CONTAINS")
+@Serializable
+data class LabelConditionGroup(val conditions: List<LabelCondition> = emptyList())

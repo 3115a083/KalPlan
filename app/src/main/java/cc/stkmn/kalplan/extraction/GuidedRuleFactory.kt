@@ -61,7 +61,7 @@ object GuidedRuleFactory {
         }
 
         val selectedIndex = candidate.sourceLine.indexOf(candidate.value)
-        if (selectedIndex >= 0 && candidate.value != candidate.sourceLine) {
+        if (candidate.value.isNotEmpty() && selectedIndex >= 0 && candidate.value != candidate.sourceLine) {
             return extractorFromSelection(
                 sourceText = candidate.sourceLine,
                 selectionStart = selectedIndex,
@@ -81,7 +81,7 @@ object GuidedRuleFactory {
                 id = "guided_" + normalizedKey,
                 key = normalizedKey,
                 semantic = semantic,
-                regex = "(?m)^\\s*" + label + "\\s*" + separator + "\\s*(.+?)\\s*$",
+                regex = "(?m)^[ \\t]*" + label + "[ \\t]*" + separator + "[ \\t]*([^\\n]*)$",
                 required = required,
                 source = InputSource.BODY,
                 sampleLabel = split.first
@@ -112,40 +112,29 @@ object GuidedRuleFactory {
         val end = maxOf(selectionStart, selectionEnd).coerceIn(0, sourceText.length)
         require(end > start) { "A text selection is required." }
 
-        val lineStart = sourceText.lastIndexOf('\n', (start - 1).coerceAtLeast(0))
-            .let { if (it < 0) 0 else it + 1 }
-        val lineEnd = sourceText.indexOf('\n', end)
-            .let { if (it < 0) sourceText.length else it }
-
-        val prefix = sourceText.substring(lineStart, start)
-        val suffix = sourceText.substring(end, lineEnd)
         val selected = sourceText.substring(start, end)
         val normalizedKey = sanitizeKey(key)
-
-        val regex = if (prefix.isBlank() && suffix.isBlank()) {
-            "(?m)^\\s*(.+?)\\s*$"
-        } else {
-            "(?m)^" + flexibleLiteral(prefix) + "(.+?)" + flexibleLiteral(suffix) + "$"
-        }
+        val selector = FieldRuleBuilder.fromSelection(sourceText, start, end, source, normalizedKey)
 
         return ExtractorRule(
             id = "guided_" + normalizedKey,
             key = normalizedKey,
             semantic = semantic,
-            regex = regex,
+            regex = if (selector.kind == FieldSelectorKind.REGEX) selector.pattern else "(.*)",
             required = required,
             source = source,
-            sampleLabel = selected.take(80)
+            sampleLabel = selected.take(80),
+            selector = if (selector.kind == FieldSelectorKind.REGEX) null else selector
         )
     }
 
     private fun splitLabelAndValue(line: String): Pair<String, String>? {
         for (separator in SEPARATORS) {
             val index = line.indexOf(separator)
-            if (index in 1 until line.lastIndex) {
+            if (index in 1 until line.length) {
                 val left = line.substring(0, index).trim()
                 val right = line.substring(index + separator.length).trim()
-                if (left.length <= 60 && right.isNotBlank()) return left to right
+                if (left.length <= 60) return left to right
             }
         }
         return null

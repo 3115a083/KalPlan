@@ -12,14 +12,14 @@ class PlanningPolicyTest {
             labels = listOf("Fiber"), candidates = listOf(StoredCandidate(durationMinutes = duration)), selectedCandidate = 0)
         assertTrue(PlanningPolicy.priority(request(60), settings, 1000).score < PlanningPolicy.priority(request(240), settings, 1000).score)
     }
-    @Test fun labelValueOverrideOnlyReplacesConfiguredParts() {
+    @Test fun enabledLabelValueOverrideTreatsUnspecifiedPricesAsZero() {
         val global = ValueSettings(enabled = true, workCentsPerHour = 9300, travelCentsPerHour = 9300, centsPerKm = 42, flatCents = 0)
         val settings = Settings(value = global, labels = listOf(LabelPolicy("Fiber", listOf("fiber"), valueOverride = ValueOverride(workCentsPerHour = 8500, flatCents = 2500))))
         val request = StoredRequest("id", sender = "", subject = "", body = "", receivedMillis = 0, labels = listOf("Fiber"))
         val selected = PlanningPolicy.valueSettings(request, settings)
         assertEquals(8500, selected.workCentsPerHour)
-        assertEquals(9300, selected.travelCentsPerHour)
-        assertEquals(42, selected.centsPerKm)
+        assertEquals(0, selected.travelCentsPerHour)
+        assertEquals(0, selected.centsPerKm)
         assertEquals(2500, selected.flatCents)
     }
     @Test fun highestWeightedMatchingLabelProvidesPriceOverride() {

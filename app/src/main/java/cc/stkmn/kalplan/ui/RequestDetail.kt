@@ -39,6 +39,9 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
     var editing by rememberSaveable(request.id) { mutableStateOf(false) }
     var routing by rememberSaveable(request.id) { mutableStateOf(false) }
     var guided by rememberSaveable(request.id) { mutableStateOf(false) }
+    var refinedProfileId by rememberSaveable(request.id) { mutableStateOf<String?>(null) }
+    val extractedProfile = state.profiles.firstOrNull { it.id == (refinedProfileId ?: request.extractionProfileId) }
+        ?: state.profiles.firstOrNull { it.id == state.accounts.firstOrNull { account -> account.id == request.accountId }?.folderProfiles?.get(request.folder) }
     var dismiss by remember { mutableStateOf(false) }
     var attachmentToOpen by remember { mutableStateOf<StoredAttachment?>(null) }
     LaunchedEffect(request, state.calendars, state.settings) { assessment = runCatching { planner.assess(request) }.getOrNull() }
@@ -58,6 +61,20 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
             Text(request.subject, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(request.sender, style = MaterialTheme.typography.bodySmall)
             LabelChips(request.labels, state.settings.labels)
+            if (request.extractedFields.isNotEmpty() || request.extractedDescription.isNotBlank() || request.extractedTitle.isNotBlank()) {
+                var expanded by rememberSaveable(request.id) { mutableStateOf(false) }
+                OutlinedCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { expanded = !expanded }) { Text(tr("Erkannte Angaben", "Extracted information") + " (${request.extractedFields.size})") }
+                    if (request.extractedTitle.isNotBlank()) Text(request.extractedTitle, style = MaterialTheme.typography.titleMedium)
+                    if (expanded) {
+                        request.extractedFields.forEach { (key, value) ->
+                            val name = extractedProfile?.extractors?.firstOrNull { it.key == key }?.displayName?.ifBlank { key } ?: key
+                            SelectionContainer { Text(name + ": " + value.take(20_000).ifEmpty { tr("(leer)", "(empty)") }) }
+                        }
+                        if (request.extractedDescription.isNotBlank()) SelectionContainer { Text(request.extractedDescription.take(20_000)) }
+                    }
+                } }
+            }
             PrimaryTabRow(selectedTabIndex = tab) {
                 listOf(tr("Info", "Info"), tr("E-Mail", "Mail"), tr("Dateien", "Files"), tr("Prüfung", "Check")).forEachIndexed { i, title ->
                     Tab(selected = tab == i, onClick = { tab = i }, text = { Text(title, maxLines = 1, style = MaterialTheme.typography.labelMedium) })
@@ -72,6 +89,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(appointmentTime(c), fontWeight = FontWeight.SemiBold)
                                 Text(if (c.assumed) "~${c.durationMinutes} min." else "${c.durationMinutes} min.")
+                                AppointmentKindIcon(c.location, c.mode, Modifier.size(20.dp))
                                 Text(if (c.mode == "ONLINE") tr("Online · Arbeitsort: ", "Online · Work location: ") + state.settings.originAddress else c.location.ifBlank { tr("Ort fehlt", "Location missing") })
                                 Text(tr("Konfidenz", "Confidence") + ": ${(c.confidence * 100).toInt()}% · ${c.relation}", style = MaterialTheme.typography.bodySmall)
                                 if (i == request.selectedCandidate) Text(tr("Ausgewählt", "Selected"), color = MaterialTheme.colorScheme.primary)
@@ -127,12 +145,21 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
                     Text(tr("Anhänge werden nicht automatisch analysiert.", "Attachments are never analyzed automatically."), style = MaterialTheme.typography.bodySmall)
                 }
                 3 -> {
-                    Text(tr("Deterministische Extraktion, lokal", "Deterministic extraction, local"), style = MaterialTheme.typography.titleMedium)
+                    Text(tr("Lokale Extraktion mit Evidenz", "Local extraction with evidence"), style = MaterialTheme.typography.titleMedium)
                     request.evidence.forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                     request.issues.forEach { Text(reasonText(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     Text(tr("Prioritätsregeln", "Priority rules"), style = MaterialTheme.typography.titleMedium)
                     PlanningPolicy.priority(request, state.settings).reasons.forEach { Text(it) }
-                    Button(enabled = !busy, onClick = { guided = true }) { Text(tr("Profil aus dieser Mail erstellen", "Create profile from this email")) }
+                    Button(enabled = !busy, onClick = { guided = true }) { Text(if (extractedProfile == null) tr("Profil aus dieser Mail erstellen", "Create profile from this email") else tr("Profil mit dieser Mail verfeinern", "Refine profile with this email")) }
+                    if (!busy && request.pending && !request.manual && request.replyId == null && request.reservationEventId == null && state.profiles.any { it.enabled }) {
+                        SelectMenu("", listOf("") + state.profiles.filter { it.enabled }.map { it.id }, label = { id -> state.profiles.firstOrNull { it.id == id }?.name ?: tr("Gespeichertes Profil anwenden", "Apply a saved profile") }) { id ->
+                            if (id.isNotBlank()) onRun { repository.request(request.id) { current -> RequestFactory.reextract(current, repository.data.value, repository.data.value.profiles.first { it.id == id && it.enabled }) }; refinedProfileId = id }
+                        }
+                    }
+                    if (extractedProfile != null) OutlinedButton(enabled = !busy && request.pending && !request.manual && request.replyId == null && request.reservationEventId == null,
+                        onClick = { val id = extractedProfile.id; onRun {
+                            repository.request(request.id) { current -> RequestFactory.reextract(current, repository.data.value, repository.data.value.profiles.first { it.id == id }) }
+                        } }) { Text(tr("Mit gespeichertem Profil neu auswerten", "Re-evaluate with saved profile")) }
                     if (request.manual) Text(tr("Manuelle Angaben haben Vorrang und werden nicht durch Sync ersetzt.", "Manual edits take precedence and are preserved across sync."))
                 }
             }
@@ -154,7 +181,7 @@ fun RequestDetail(request: StoredRequest, state: AppData, repository: AppReposit
         } }) { Text(tr("Laden und öffnen", "Download and open")) } }, dismissButton = { TextButton(onClick = { attachmentToOpen = null }) { Text(tr("Abbrechen", "Cancel")) } }) }
     if (editing) EditCandidateDialog(request, state.settings.labels, onDismiss = { editing = false }, onSave = { c, labels -> editing = false; onRun { repository.request(request.id) { it.copy(candidates = listOf(c), selectedCandidate = 0, unclear = false, manual = true, labels = labels, issues = emptyList(), status = "NEW", routeCheckedMillis = null, travelAfterCheckedMillis = null) } } })
     if (routing) RouteDialog(request, state, assessment?.origin ?: state.settings.originAddress, assessment?.nextLocation.orEmpty(), repository, busy, onRun, onDismiss = { routing = false })
-    if (guided) GuidedProfileDialog(request, state, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) } } })
+    if (guided) GuidedProfileDialog(request, state, extractedProfile, onDismiss = { guided = false }, onSave = { profile -> guided = false; onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == profile.id } + profile) }; refinedProfileId = profile.id } })
     if (dismiss) AlertDialog(onDismissRequest = { dismiss = false }, title = { Text(tr("Aus KalPlan entfernen?", "Dismiss from KalPlan?")) }, text = { Text(tr("Die Quellmail bleibt erhalten. Der Eintrag bleibt im Verlauf.", "The source email is preserved. The item stays in history.")) }, confirmButton = { TextButton(onClick = { dismiss = false; onRun { repository.request(request.id) { it.copy(status = "DISMISSED") }; onClose() } }) { Text(tr("Entfernen", "Dismiss")) } }, dismissButton = { TextButton(onClick = { dismiss = false }) { Text(tr("Abbrechen", "Cancel")) } })
 }
 
@@ -201,7 +228,7 @@ private fun EditCandidateDialog(request: StoredRequest, policies: List<LabelPoli
             EditField(tr("Uhrzeit (HH:MM)", "Time (HH:MM)"), time) { time = it }
             EditField(tr("UTC-Offset bei Zeitumstellung, z. B. +02:00. Sonst leer.", "UTC offset for DST overlap, e.g. +02:00. Otherwise empty."), offsetText) { offsetText = it }
             EditField(tr("Dauer in Minuten", "Duration in minutes"), duration) { duration = it }
-            EditField(tr("Ort", "Location"), location) { location = it }
+            AddressField(tr("Ort", "Location"), location) { location = it }
             ToggleRow(tr("Online", "Online"), online) { online = it }
             Text(tr("Labels", "Labels"), style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -298,12 +325,12 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
     val context = LocalContext.current
     val settings = state.settings
     val candidate = request.candidate
-    val profileId = state.accounts.firstOrNull { it.id == request.accountId }?.folderProfiles?.get(request.folder)
-    val profile = state.profiles.firstOrNull { it.id == profileId && it.enabled }
-    val defaultBody = (if (accept) profile?.acceptTemplate?.takeIf { it.isNotBlank() } ?: settings.acceptTemplate else profile?.declineTemplate?.takeIf { it.isNotBlank() } ?: settings.declineTemplate)
+    val folderProfileId = state.accounts.firstOrNull { it.id == request.accountId }?.folderProfiles?.get(request.folder)
+    val profile = state.profiles.firstOrNull { it.id == request.extractionProfileId } ?: state.profiles.firstOrNull { it.id == folderProfileId && it.enabled }
+    val defaultBody = ProfileTemplate.render((if (accept) profile?.acceptTemplate?.takeIf { it.isNotBlank() } ?: settings.acceptTemplate else profile?.declineTemplate?.takeIf { it.isNotBlank() } ?: settings.declineTemplate)
         .replace("{date}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate().format(java.time.format.DateTimeFormatter.ofLocalizedDate(java.time.format.FormatStyle.SHORT).withLocale(LocalConfiguration.current.locales[0])) }.orEmpty())
         .replace("{time}", candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalTime().toString() }.orEmpty())
-        .replace("{subject}", request.subject).replace("{sender}", request.sender)
+        .replace("{subject}", request.subject).replace("{sender}", request.sender), request.extractedFields)
     var body by rememberSaveable(request.id, accept) { mutableStateOf(defaultBody) }
     var confirm by remember { mutableStateOf(false) }
     var result by remember { mutableStateOf<String?>(null) }
@@ -318,7 +345,7 @@ private fun ReplyComposer(request: StoredRequest, accept: Boolean, state: AppDat
         if (settings.debug) Text(tr("Debug: Versand nur an Testadresse. Kalenderwrites werden simuliert.", "Debug: only the test address can receive mail. Calendar writes are simulated."), color = MaterialTheme.colorScheme.error)
         if (request.accountId.isBlank() && !request.demo) Text(tr("Dieser lokale Import hat keine Quellmail. Du kannst den Text für eine manuelle Antwort kopieren.", "This local import has no source email. Copy the text for a manual reply."))
         if (!simulation && (configuredAccount == null || !configuredAccount.smtpEnabled)) Button(onClick = onSetupMail) { Text(tr("Nachricht einrichten", "Set up email")) }
-        OutlinedTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
+        StableTextField(body, { body = it.take(100_000) }, modifier = Modifier.fillMaxWidth(), minLines = 8, label = { Text(tr("Antworttext", "Reply text")) })
         state.accounts.firstOrNull { it.id == request.accountId }?.signature?.takeIf { it.isNotBlank() }?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         if (accept) Text(tr("Nach Versand: wartet auf Rückmeldung. Eine optionale Reservierung ist kein bestätigter Auftrag.", "After sending: waiting for response. An optional reservation is not a confirmed booking."))
         val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -355,7 +382,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
     var dCoordinates by rememberSaveable { mutableStateOf("") }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Fahrtzeit manuell", "Manual travel check")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EditField(tr("Startort", "Origin"), origin) { origin = it }
+            AddressField(tr("Startort", "Origin"), origin) { origin = it }
             Text(tr("Ziel: ", "Destination: ") + destination.ifBlank { tr("Fehlt. Zuerst Termindetails korrigieren.", "Missing. Correct appointment details first.") })
             Text(tr("Karte öffnen überträgt die beiden Adressen an Google Maps.", "Opening the map sends both addresses to Google Maps."), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(enabled = origin.isNotBlank() && destination.isNotBlank(), onClick = {
@@ -385,7 +412,7 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
                 }
             }) { Text(tr("Grobe Offline-Näherung aus Koordinaten", "Coarse offline estimate from coordinates")) }
             Text(tr("Die Offline-Näherung kennt keine Straßen oder Hindernisse. Prüfe die Fahrt selbst.", "The offline estimate does not know roads or obstacles. Review the trip yourself."), style = MaterialTheme.typography.bodySmall)
-            EditField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
+            AddressField(tr("Ziel des Folgetermins, falls vorhanden", "Following appointment destination, if any"), afterDestination) { afterDestination = it }
             EditField(tr("Fahrtminuten zum Folgetermin", "Travel minutes to following appointment"), afterMinutes) { afterMinutes = it }
         }
     }, confirmButton = { TextButton(enabled = !busy && minutes.toIntOrNull()?.let { it in 0..10080 } == true && (km.toDoubleOrNull()?.let { it.isFinite() && it in 0.0..100_000.0 } == true), onClick = { onRun { repository.request(request.id) { it.copy(travelMinutes = minutes.toInt(), distanceKm = km.toDouble(), routeCheckedMillis = System.currentTimeMillis(),
@@ -396,44 +423,8 @@ private fun RouteDialog(request: StoredRequest, state: AppData, originAddress: S
 }
 
 @Composable
-private fun GuidedProfileDialog(request: StoredRequest, state: AppData, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit) {
-    var name by rememberSaveable { mutableStateOf(request.subject.take(60)) }
-    var acceptOverride by rememberSaveable { mutableStateOf("") }
-    var declineOverride by rememberSaveable { mutableStateOf("") }
-    var rules by remember { mutableStateOf(emptyList<ExtractorRule>()) }
-    val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis)) }
-    val candidates = remember(input) { GuidedRuleFactory.candidates(input) }
-    var preview by remember { mutableStateOf("") }
-    fun draftProfile(id: String) = ExtractionProfile(
-        id = id, name = name, extractors = rules,
-        acceptTemplate = acceptOverride.takeIf { it.isNotBlank() },
-        declineTemplate = declineOverride.takeIf { it.isNotBlank() }
-    )
-    AlertDialog(onDismissRequest = onDismiss, title = { Text(tr("Geführtes Extraktionsprofil", "Guided extraction profile")) }, text = {
-        Column(Modifier.heightIn(max = 500.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            EditField(tr("Profilname", "Profile name"), name) { name = it }
-            Text(tr("Ordne erkannte Zeilen einem Feld zu. Regeln werden erst nach Speichern und Zuordnung zu einem Mailordner aktiv.", "Assign detected lines to a field. Rules become active after saving and assigning a mail folder."))
-            candidates.forEachIndexed { i, c ->
-                Text("${c.label}: ${c.value.take(100)}", style = MaterialTheme.typography.bodySmall)
-                var semantic by remember(i) { mutableStateOf("DATE") }
-                ChoiceRow(listOf("DATE", "TIME", "END_TIME", "DURATION", "LOCATION", "ONLINE_OR_LOCATION", "TITLE"), semantic, label = { semanticName(it) }) { semantic = it }
-                TextButton(onClick = {
-                    val r = GuidedRuleFactory.extractor(c, "field_$i", SemanticField.valueOf(semantic))
-                    rules = rules.filterNot { it.key == r.key } + r
-                }) { Text(tr("Feld hinzufügen", "Add field")) }
-            }
-            EditField(tr("Annahmevorlage, leer = global", "Acceptance template, empty = global"), acceptOverride) { acceptOverride = it }
-            EditField(tr("Absagevorlage, leer = global", "Decline template, empty = global"), declineOverride) { declineOverride = it }
-            Text("${rules.size} " + tr("Regeln", "rules"))
-            OutlinedButton(enabled = rules.isNotEmpty(), onClick = {
-                val p = draftProfile("preview")
-                val r = KalPlanExtractionPipeline().extract(input, p)
-                preview = r.fields.values.joinToString("\n") { "${it.semantic}: ${it.value}" } + "\n" + r.issues.joinToString { it.code }
-            }) { Text(tr("Vorschau testen", "Test preview")) }
-            Text(preview, style = MaterialTheme.typography.bodySmall)
-        }
-    }, confirmButton = { TextButton(enabled = rules.isNotEmpty() && name.isNotBlank(), onClick = {
-        val p = draftProfile(UUID.randomUUID().toString())
-        if (ProfileValidator().validate(p).isEmpty()) onSave(p)
-    }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(onClick = onDismiss) { Text(tr("Abbrechen", "Cancel")) } })
+private fun GuidedProfileDialog(request: StoredRequest, state: AppData, existing: ExtractionProfile?, onDismiss: () -> Unit, onSave: (ExtractionProfile) -> Unit) {
+    val input = remember(request.id) { ExtractionInput(request.sender, request.subject, request.body, Instant.ofEpochMilli(request.receivedMillis), ZoneId.systemDefault()) }
+    ProfileEditorDialog(existing, onDismiss = onDismiss, onSave = onSave, onDelete = null,
+        labels = state.settings.labels.map { it.name }, initialInput = input, availableInputs = profileMailInputs(state.requests))
 }

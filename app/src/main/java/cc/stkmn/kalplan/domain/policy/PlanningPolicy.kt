@@ -6,11 +6,29 @@ import java.math.RoundingMode
 import java.time.*
 
 data class PriorityResult(val score: Int, val rank: Int, val reasons: List<String>, val stale: Boolean)
-data class ValueResult(val totalCents: Long, val workCents: Long, val travelCents: Long, val distanceCents: Long, val flatCents: Long, val billedMinutes: Int)
+data class ValueResult(val totalCents: Long, val workCents: Long, val travelCents: Long, val distanceCents: Long, val flatCents: Long, val billedMinutes: Int, val workFlatCents: Long = 0, val travelFlatCents: Long = 0)
 
 object PlanningPolicy {
     fun labels(sender: String, subject: String, body: String, policies: List<LabelPolicy>): List<String> {
         return policies.filter { rule ->
+            if (rule.conditionGroups.isNotEmpty()) return@filter rule.conditionGroups.any { group ->
+                group.conditions.isNotEmpty() && group.conditions.all { condition ->
+                    val source = when (condition.field) {
+                        "SENDER" -> sender
+                        "SUBJECT" -> subject
+                        "BODY" -> body
+                        "SUBJECT_OR_BODY" -> "$subject\n$body"
+                        else -> return@all false
+                    }
+                    condition.text.isNotBlank() && when (condition.operator) {
+                        "EQUALS" -> source.trim().equals(condition.text.trim(), true)
+                        "NOT_CONTAINS" -> !source.contains(condition.text, true)
+                        "CONTAINS" -> source.contains(condition.text, true)
+                        else -> false
+                    }
+                }
+            }
+
             val text = when (rule.searchIn) {
                 "SUBJECT" -> subject
                 "BODY" -> body
@@ -56,40 +74,52 @@ object PlanningPolicy {
         val billed = units * step
         val factor = if (settings.roundTrip) 2 else 1
         fun timeCents(minutes: Int, rate: Long) = BigDecimal(minutes).multiply(BigDecimal(rate)).divide(BigDecimal(60), 0, RoundingMode.HALF_UP).longValueExact()
-        val work = timeCents(billed, settings.workCentsPerHour)
-        val travel = timeCents((travelMinutes ?: 0).coerceIn(0, 10080) * factor, settings.travelCentsPerHour)
+        val work = if (settings.flatFeeComponents.any { it.appliesTo == "WORK" && it.replacesHourly }) 0L else timeCents(billed, settings.workCentsPerHour)
+        val travel = if (settings.flatFeeComponents.any { it.appliesTo == "TRAVEL" && it.replacesHourly }) 0L else timeCents((travelMinutes ?: 0).coerceIn(0, 10080) * factor, settings.travelCentsPerHour)
         val km = (distanceKm ?: 0.0).also { require(it.isFinite() && it >= 0 && it <= 100_000) } * factor
         val distance = BigDecimal.valueOf(km).multiply(BigDecimal(settings.centsPerKm)).setScale(0, RoundingMode.HALF_UP).longValueExact()
         val band = if (distanceKm == null) 0L else settings.distanceBands.sortedBy { it.upToKm }.firstOrNull { km <= it.upToKm }?.cents ?: 0
-        val flat = settings.flatCents + band
-        return ValueResult(work + travel + distance + flat, work, travel, distance, flat, billed)
+        fun fee(preset: FlatFeePreset): Long {
+            require(preset.flatCents in 0..100_000_000 && preset.appliesTo in setOf("ORDER", "WORK", "TRAVEL"))
+            require(preset.distanceBands.all { it.upToKm.isFinite() && it.upToKm >= 0 && it.cents in 0..100_000_000 })
+            return preset.flatCents + if (distanceKm == null) 0L else preset.distanceBands.sortedBy { it.upToKm }.firstOrNull { km <= it.upToKm }?.cents.orZero()
+        }
+        val fees = settings.flatFeeComponents.distinctBy { it.id }
+        val workFlat = fees.filter { it.appliesTo == "WORK" }.sumOf(::fee)
+        val travelFlat = fees.filter { it.appliesTo == "TRAVEL" }.sumOf(::fee)
+        val flat = settings.flatCents + band + fees.filter { it.appliesTo == "ORDER" }.sumOf(::fee) + workFlat + travelFlat
+        return ValueResult(work + travel + distance + flat, work, travel, distance, flat, billed, workFlat, travelFlat)
     }
     fun valueSettings(request: StoredRequest, settings: Settings): ValueSettings {
         val override = settings.labels.filter { it.name in request.labels && it.valueOverride != null }.maxByOrNull { it.score }?.valueOverride
         val base = settings.value
         val merged = if (override == null) base else base.copy(
-            workCentsPerHour = override.workCentsPerHour ?: settings.value.workCentsPerHour,
-            travelCentsPerHour = override.travelCentsPerHour ?: settings.value.travelCentsPerHour,
-            centsPerKm = override.centsPerKm ?: settings.value.centsPerKm,
-            flatCents = override.flatCents ?: settings.value.flatCents,
-            flatFeePresetId = override.flatFeePresetId ?: settings.value.flatFeePresetId,
+            workCentsPerHour = override.workCentsPerHour ?: 0L,
+            travelCentsPerHour = override.travelCentsPerHour ?: 0L,
+            centsPerKm = override.centsPerKm ?: 0L,
+            flatCents = override.flatCents ?: 0L,
+            flatFeePresetIds = override.flatFeePresetIds ?: emptyList(),
+            flatFeePresetId = override.flatFeePresetId.orEmpty(),
+            distanceBands = emptyList(), flatFeeComponents = emptyList(),
             billingStepMinutes = override.billingStepMinutes ?: settings.value.billingStepMinutes,
             roundUp = override.roundUp ?: settings.value.roundUp,
             roundingMode = override.roundingMode ?: settings.value.roundingMode,
             roundTrip = override.roundTrip ?: settings.value.roundTrip
         )
+        if (merged.flatFeePresetIds.isNotEmpty()) return merged.copy(flatFeeComponents =
+            settings.flatFeePresets.filter { it.id in merged.flatFeePresetIds })
         val preset = settings.flatFeePresets.firstOrNull { it.id == merged.flatFeePresetId }
         return if (preset == null) merged else merged.copy(flatCents = preset.flatCents, distanceBands = preset.distanceBands)
     }
     fun syncPaused(settings: Settings, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
         val day = now.dayOfWeek.value
-        if (day in settings.pausedWeekdays || settings.pauseWeekends && day >= 6) return true
+        if (day !in settings.activeSyncWeekdays) return true
         val from = runCatching { LocalDate.parse(settings.pauseFrom) }.getOrNull()
         val until = runCatching { LocalDate.parse(settings.pauseUntil) }.getOrNull()
         if (from != null && until != null && now.toLocalDate() in from..until) return true
         val quietFrom = runCatching { LocalTime.parse(settings.quietFrom) }.getOrNull()
         val quietUntil = runCatching { LocalTime.parse(settings.quietUntil) }.getOrNull()
-        if (quietFrom != null && quietUntil != null) {
+        if (settings.quietHoursEnabled && quietFrom != null && quietUntil != null) {
             val time = now.toLocalTime()
             if (quietFrom == quietUntil || quietFrom < quietUntil && time >= quietFrom && time < quietUntil ||
                 quietFrom > quietUntil && (time >= quietFrom || time < quietUntil)) return true
@@ -97,3 +127,5 @@ object PlanningPolicy {
         return false
     }
 }
+
+private fun Long?.orZero() = this ?: 0L

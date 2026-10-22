@@ -30,10 +30,10 @@ import java.time.LocalDate
 import java.util.UUID
 
 @Composable fun EditField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(value, { onChange(it.take(100_000)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), maxLines = 6)
+    StableTextField(value, { onChange(it.take(100_000)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), maxLines = 6)
 }
 @Composable fun SecretField(label: String, value: String, onChange: (String) -> Unit) {
-    OutlinedTextField(value, { onChange(it.take(4096)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
+    StableTextField(value, { onChange(it.take(4096)) }, label = { Text(label) }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
 }
 @Composable fun ToggleRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -55,6 +55,9 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
     var accountEdit by remember { mutableStateOf<MailAccount?>(null) }
     var newAccount by remember { mutableStateOf(false) }
     var profileJson by rememberSaveable { mutableStateOf<String?>(null) }
+    var profileEditId by rememberSaveable { mutableStateOf<String?>(null) }
+    val profileEdit = state.profiles.firstOrNull { it.id == profileEditId }
+    var newProfile by rememberSaveable { mutableStateOf(false) }
     var profileError by remember { mutableStateOf("") }
     var draft by remember(state.settings) { mutableStateOf(state.settings) }
     var duration by remember(state.settings) { mutableStateOf(draft.defaultDuration.toString()) }
@@ -105,11 +108,12 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         SectionTitle(tr("Extraktionsprofile", "Extraction profiles"))
         state.profiles.forEach { p ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { profileJson = ExtractionProfileCodec().encode(p) }) { Text(p.name) }
+                TextButton(onClick = { profileEditId = p.id }) { Text(p.name) }
                 TextButton(onClick = { exportJson = ExtractionProfileCodec().encode(p); export.launch("KalPlan-${p.id}.json") }) { Text(tr("Export", "Export")) }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { newProfile = true }) { Text(tr("Profil erstellen", "Create profile")) }
             OutlinedButton(onClick = { import.launch(arrayOf("application/json", "text/plain")) }) { Text(tr("Import", "Import")) }
             TextButton(onClick = { profileJson = "" }) { Text(tr("JSON bearbeiten", "Edit JSON")) }
         }
@@ -147,9 +151,7 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         SectionTitle(tr("Synchronisierung", "Sync"))
         EditField(tr("Intervall, Minuten. 0 = nur manuell", "Interval, minutes. 0 = manual only"), sync) { sync = it }
         Text(tr("5 bis 14 Minuten: Best-Effort. Android darf Läufe verzögern.", "5 to 14 minutes: best effort. Android may delay execution."), style = MaterialTheme.typography.bodySmall)
-        ToggleRow(tr("Wochenende pausieren", "Pause weekends"), draft.pauseWeekends) { draft = draft.copy(pauseWeekends = it) }
-        ChoiceRow((1..7).map { it.toString() }, "") { day -> val d = day.toInt(); draft = draft.copy(pausedWeekdays = if (d in draft.pausedWeekdays) draft.pausedWeekdays - d else draft.pausedWeekdays + d) }
-        Text(tr("Pausierte Wochentage (1 = Montag): ", "Paused weekdays (1 = Monday): ") + draft.pausedWeekdays.sorted().joinToString())
+        SyncScheduleSettings(draft, enabled = !busy) { draft = it }
         EditField(tr("Urlaub von (JJJJ-MM-TT)", "Vacation from (YYYY-MM-DD)"), draft.pauseFrom) { draft = draft.copy(pauseFrom = it) }
         EditField(tr("Urlaub bis (JJJJ-MM-TT)", "Vacation until (YYYY-MM-DD)"), draft.pauseUntil) { draft = draft.copy(pauseUntil = it) }
         state.lastSyncMillis?.let { Text(tr("Letzter erfolgreicher Sync: ", "Last successful sync: ") + java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneId.systemDefault())) }
@@ -158,7 +160,7 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
         EditField(tr("Absagevorlage", "Decline template"), draft.declineTemplate) { draft = draft.copy(declineTemplate = it) }
         Text("{date}, {time}, {subject}, {sender}", style = MaterialTheme.typography.bodySmall)
         Text(tr("Kalenderbeschreibung: FULL überträgt den ganzen Mailtext in deinen Kalender.", "Calendar description: FULL copies the entire email text into your calendar."))
-        ChoiceRow(listOf("NONE", "FULL", "EXCLUDE", "EXCERPTS", "TEMPLATE"), draft.reservationDescription) { draft = draft.copy(reservationDescription = it) }
+        ChoiceRow(listOf("NONE", "FULL", "EXCLUDE", "EXCERPTS", "TEMPLATE", "PROFILE"), draft.reservationDescription, label = { if (it == "PROFILE") tr("Extrahierte Beschreibung", "Extracted description") else it }) { draft = draft.copy(reservationDescription = it) }
         if (draft.reservationDescription == "TEMPLATE") EditField(tr("Beschreibungsvorlage", "Description template"), draft.reservationTemplate) { draft = draft.copy(reservationTemplate = it) }
         if (draft.reservationDescription == "EXCLUDE") EditField(tr("Ausgeschlossene Textblöcke, getrennt durch ||", "Excluded text blocks, separated by ||"), draft.reservationExcludeBlocks.joinToString("||")) { draft = draft.copy(reservationExcludeBlocks = it.split("||")) }
         if (draft.reservationDescription == "EXCERPTS") EditField(tr("Textausschnitte, getrennt durch ||", "Excerpts, separated by ||"), draft.reservationExcerpts.joinToString("||")) { draft = draft.copy(reservationExcerpts = it.split("||")) }
@@ -202,7 +204,7 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
                 val next = draft.copy(attachmentRules = attachmentRules, syncMinutes = interval, defaultDuration = d, staleHours = s, beforeBuffer = b, afterBuffer = a, originThreshold = t, routingDailyLimit = l, labels = labels,
                     value = draft.value.copy(workCentsPerHour = cents(workRate), travelCentsPerHour = cents(travelRate), centsPerKm = cents(kmRate), flatCents = cents(flatRate), billingStepMinutes = increment))
                 onRun { repository.update { it.copy(settings = next) }; SyncScheduler.configure(context, next.syncMinutes); feedback = "Gespeichert / Saved" }
-            }.onFailure { feedback = "Eingaben prüfen / Check inputs" }
+            }.onFailure { feedback = "IMAP-Host ohne Protokoll/Port, Benutzername und Authentifizierung prüfen. SMTP ist für Empfang optional. / Check IMAP host without scheme/port, username and authentication. SMTP is optional for receiving." }
         }) { Text(tr("Einstellungen speichern", "Save settings")) }
         Text(feedback, color = MaterialTheme.colorScheme.primary)
         HorizontalDivider()
@@ -251,6 +253,10 @@ fun LegacySettingsScreen(state: AppData, repository: AppRepository, busy: Boolea
     }
     if (newAccount || accountEdit != null) AccountDialog(accountEdit, state, repository, busy, onRun,
         onDismiss = { newAccount = false; accountEdit = null })
+    if (newProfile || profileEdit != null) ProfileEditorDialog(profileEdit, labels = state.settings.labels.map { it.name }, availableInputs = profileMailInputs(state.requests),
+        onDismiss = { newProfile = false; profileEditId = null }, onSave = { saved ->
+            onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == saved.id } + saved) } }; newProfile = false; profileEditId = null
+        }, onDelete = profileEdit?.let { old -> { onRun { repository.update { it.copy(profiles = it.profiles.filterNot { p -> p.id == old.id }) } }; profileEditId = null } })
     profileJson?.let { json ->
         AlertDialog(onDismissRequest = { profileJson = null }, title = { Text(tr("Profil validieren", "Validate profile")) }, text = {
             Column(Modifier.verticalScroll(rememberScrollState())) { EditField("JSON", json) { profileJson = it }; Text(profileError, color = MaterialTheme.colorScheme.error) }
@@ -302,10 +308,7 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
         signatureAssets = (signatureAssets + added).distinctBy { it.uri }.take(10)
     }
     fun account(): MailAccount {
-        ReplyPolicy.address(address)
-        require(username.isNotBlank() && name.isNotBlank())
-        require(imap.isNotBlank() && !imap.any { it.isWhitespace() || it == '/' })
-        require(!smtpEnabled || smtp.isNotBlank() && !smtp.any { it.isWhitespace() || it == '/' })
+        require(username.isNotBlank() || address.isNotBlank())
         require(imapPort.toInt() in 1..65535 && (!smtpEnabled || smtpPort.toInt() in 1..65535))
         require(authMode == "XOAUTH2" || existing != null || password.isNotBlank())
         if (authMode == "XOAUTH2") {
@@ -315,7 +318,7 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
         }
         val selected = folders.lines().map { it.trim() }.filter { it.isNotBlank() }.distinct()
         require(selected.isNotEmpty() && selected.size <= 20)
-        return MailAccount(
+        return MailSetup.normalized(MailAccount(
             id = id, name = name, username = username, address = address,
             imapHost = imap, imapPort = imapPort.toInt(), imapStartTls = incomingStartTls,
             smtpHost = smtp, smtpPort = smtpPort.toIntOrNull() ?: 465, smtpStartTls = outgoingStartTls,
@@ -325,13 +328,13 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             authMode = authMode, oauthClientId = clientId,
             oauthAuthorizationEndpoint = authorizationEndpoint, oauthTokenEndpoint = tokenEndpoint,
             oauthScope = oauthScope
-        )
+        ))
     }
     AlertDialog(onDismissRequest = { if (!busy) onDismiss() }, title = { Text(tr("Mailkonto", "Mail account")) }, text = {
         Column(Modifier.heightIn(max = 560.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             EditField(tr("Name", "Name"), name) { name = it }
             EditField(tr("Anmelde-Benutzername", "Login username"), username) { username = it }
-            EditField(tr("Absenderadresse für Antworten", "From address for replies"), address) { address = it }
+            EditField(tr("Absenderadresse (optional bei reinem Empfang)", "From address (optional for receive only)"), address) { address = it }
             EditField("IMAP Host", imap) { imap = it }
             EditField("IMAP Port", imapPort) { imapPort = it }
             ToggleRow("IMAP STARTTLS", incomingStartTls) { incomingStartTls = it }
@@ -369,9 +372,15 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
                 runCatching { val a = account(); onRun {
                     repository.saveAccount(a, password, outgoingPassword.ifBlank { password })
                     val p = AccountProviders(repository)
-                    serverFolders = AngusMailReader(p, p).listFolders(id).map { it.path }
-                    feedback = "Verbunden / Connected"
-                } }.onFailure { feedback = "Eingaben prüfen / Check inputs" }
+                    try {
+                        serverFolders = AngusMailReader(p, p).listFolders(id).map { it.path }
+                        feedback = "IMAP verbunden / IMAP connected"
+                    } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) {
+                        feedback = mailConnectionMessage(MailSetup.failureCode(e))
+                        repository.log("imap", MailSetup.failureCode(e))
+                    }
+                } }.onFailure { feedback = "IMAP-Host ohne Protokoll/Port, Benutzername und Authentifizierung prüfen. SMTP ist für Empfang optional. / Check IMAP host without scheme/port, username and authentication. SMTP is optional for receiving." }
             }) { Text(tr("Speichern und Ordner abrufen", "Save and fetch folders")) }
             serverFolders.forEach { folder -> FilterChip(selected = folder in folders.lines(), onClick = { val current = folders.lines().filter { it.isNotBlank() }; folders = (if (folder in current) current - folder else current + folder).joinToString("\n") }, label = { Text(folder) }) }
             folders.lines().filter { it.isNotBlank() }.forEach { folder ->
@@ -393,6 +402,14 @@ internal fun AccountDialog(existing: MailAccount?, state: AppData, repository: A
             if (existing != null) TextButton(enabled = !busy, onClick = { onRun { repository.removeAccount(id); onDismiss() } }) { Text(tr("Konto lokal entfernen. Mails bleiben im Verlauf.", "Remove local account. Requests stay in history.")) }
         }
     }, confirmButton = { TextButton(enabled = !busy, onClick = {
-        runCatching { val a = account(); onRun { repository.saveAccount(a, password, outgoingPassword.ifBlank { password }); onDismiss() } }.onFailure { feedback = "Eingaben prüfen / Check inputs" }
+        runCatching { val a = account(); onRun { repository.saveAccount(a, password, outgoingPassword.ifBlank { password }); onDismiss() } }.onFailure { feedback = "IMAP-Host ohne Protokoll/Port, Benutzername und Authentifizierung prüfen. SMTP ist für Empfang optional. / Check IMAP host without scheme/port, username and authentication. SMTP is optional for receiving." }
     }) { Text(tr("Speichern", "Save")) } }, dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text(tr("Schließen", "Close")) } })
+}
+
+fun mailConnectionMessage(code: String): String = when(code) {
+    "mail_auth_failed" -> "Anmeldung abgelehnt. Benutzername, App-Passwort oder OAuth-Anmeldung und freigeschalteten IMAP-Zugriff prüfen. / Sign-in rejected. Check username, app password or OAuth and enabled IMAP access."
+    "mail_dns_failed" -> "Mailserver nicht gefunden. Hostname und Internetverbindung prüfen. / Mail server not found. Check host and internet connection."
+    "mail_tls_failed" -> "TLS-Verbindung abgelehnt. Port, STARTTLS und Zertifikat prüfen. Zertifikatsprüfung bleibt aktiv. / TLS rejected. Check port, STARTTLS and certificate. Verification remains enabled."
+    "mail_timeout" -> "Zeitüberschreitung. Erreichbarkeit und Port prüfen. / Connection timed out. Check server and port."
+    else -> "Keine Verbindung. IMAP-Server, Port und Netz prüfen. / No connection. Check IMAP server, port and network."
 }

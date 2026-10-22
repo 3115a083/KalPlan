@@ -12,6 +12,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.DirectionsCar
 import androidx.compose.material.icons.outlined.NavigateNext
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.HelpOutline
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +33,7 @@ import cc.stkmn.kalplan.application.Planner
 import cc.stkmn.kalplan.data.*
 import cc.stkmn.kalplan.domain.port.CalendarEventRef
 import cc.stkmn.kalplan.domain.policy.PlanningPolicy
+import cc.stkmn.kalplan.domain.policy.CalendarDates
 import cc.stkmn.kalplan.infrastructure.calendar.AndroidCalendarReader
 import androidx.compose.ui.platform.LocalContext
 import java.time.*
@@ -40,71 +45,83 @@ fun CalendarScreen(state: AppData, repository: AppRepository, planner: Planner, 
     val context = LocalContext.current
     var dayText by rememberSaveable { mutableStateOf(LocalDate.now().toString()) }
     val day = LocalDate.parse(dayText)
+    val zone = ZoneId.systemDefault()
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     var view by rememberSaveable { mutableStateOf("DAY") }
-    val dayCount = when (view) { "THREE" -> 3; "WEEK" -> 7; else -> 1 }
-    val shownDays = (0 until dayCount).map { day.plusDays(it.toLong()) }
+    var jump by rememberSaveable { mutableStateOf(false) }
+    val weekStart = CalendarDates.weekStart(day)
+    val monthDays = CalendarDates.monthDays(YearMonth.from(day))
+    val queryDays = if (view == "MONTH") monthDays else (0..6).map { weekStart.plusDays(it.toLong()) }
+    val shownDays = if (view == "WEEK") queryDays else listOf(day)
     var events by remember { mutableStateOf(emptyList<CalendarEventRef>()) }
+    var calendarColors by remember { mutableStateOf(emptyMap<String, Color>()) }
     var failed by remember { mutableStateOf(false) }
     var selectedEvent by remember { mutableStateOf<CalendarEventRef?>(null) }
-    LaunchedEffect(day, dayCount, state.calendars, state.requests) {
+    LaunchedEffect(queryDays.first(), queryDays.last(), state.calendars, state.lastSyncMillis) {
         try {
-            val zone = ZoneId.systemDefault()
+            val reader = AndroidCalendarReader(context)
             val privacy = state.calendars.filter { it.included }.associateBy { it.id }
-            events = AndroidCalendarReader(context).events(day.atStartOfDay(zone).toInstant(), day.plusDays(dayCount.toLong()).atStartOfDay(zone).toInstant(), privacy.keys).map { e ->
+            calendarColors = reader.calendars().associate { c -> c.id to (privacy[c.id]?.colorHex?.takeIf(String::isNotBlank)?.let(::parseTimelineColor) ?: c.colorArgb?.let { Color(it) } ?: Color(0xFF6750A4)) }
+            events = reader.events(queryDays.first().atStartOfDay(zone).toInstant(), queryDays.last().plusDays(1).atStartOfDay(zone).toInstant(), privacy.keys).map { e ->
                 val p = privacy.getValue(e.calendarId)
                 e.copy(title = if (p.showTitle) e.title else null, location = if (p.showLocation) e.location else null, description = if (p.showDescription) e.description else null)
             }
             failed = false
-        } catch (_: Exception) { failed = true; events = emptyList() }
+        } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        catch (_: Exception) { failed = true; events = emptyList() }
     }
-    val requests = state.requests.filter { r -> r.status != "DISMISSED" && r.candidate?.startMillis?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() in shownDays } == true }
-    val colors = remember(state.calendars) { state.calendars.mapIndexed { i, p -> p.id to listOf(Color(0xFF4365DF), Color(0xFF208363), Color(0xFFAC5A20))[i % 3] }.toMap() }
+    val requests = state.requests.filter { r -> r.status != "DISMISSED" && r.candidate?.let { c ->
+        c.startMillis != null && c.endMillis != null && shownDays.any { CalendarDates.overlapsDay(Instant.ofEpochMilli(c.startMillis), Instant.ofEpochMilli(c.endMillis), it, zone) }
+    } == true }
+    fun page(direction: Int) { dayText = when(view) { "MONTH" -> day.plusMonths(direction.toLong()); "WEEK" -> day.plusWeeks(direction.toLong()); else -> day.plusDays(direction.toLong()) }.toString() }
     LazyColumn(contentPadding = PaddingValues(16.dp, 12.dp, 16.dp, 90.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = { dayText = day.minusDays(dayCount.toLong()).toString() }) { Text("‹") }
-                Text(day.format(DateTimeFormatter.ofPattern("MMMM yyyy", androidx.compose.ui.platform.LocalConfiguration.current.locales[0])), style = MaterialTheme.typography.titleLarge)
-                TextButton(onClick = { dayText = day.plusDays(dayCount.toLong()).toString() }) { Text("›") }
+                TextButton(onClick = { page(-1) }) { Text("‹") }
+                TextButton(onClick = { jump = true }) { Text(day.format(DateTimeFormatter.ofPattern("MMMM yyyy", locale)), style = MaterialTheme.typography.titleLarge) }
+                TextButton(onClick = { page(1) }) { Text("›") }
             }
-            ChoiceRow(listOf("DAY", "THREE", "WEEK"), view, label = { when (it) { "THREE" -> tr("3 Tage", "3 days"); "WEEK" -> tr("Woche", "Week"); else -> tr("Tag", "Day") } }) { view = it }
-            Row(Modifier.fillMaxWidth().pointerInput(dayCount) {
+            SelectMenu(view, listOf("DAY", "WEEK", "MONTH"), label = { when(it) { "WEEK" -> tr("Woche", "Week"); "MONTH" -> tr("Monat", "Month"); else -> tr("Tag", "Day") } }) { view = it }
+            if (view == "MONTH") MonthGrid(YearMonth.from(day), day, events, calendarColors) { dayText = it.toString() }
+            else Row(Modifier.fillMaxWidth().pointerInput(day, view) {
                 var drag = 0f
-                detectHorizontalDragGestures(onHorizontalDrag = { change, amount -> change.consume(); drag += amount }, onDragEnd = {
-                    if (kotlin.math.abs(drag) > 80f) dayText = (if (drag < 0) day.plusDays(dayCount.toLong()) else day.minusDays(dayCount.toLong())).toString()
-                })
+                detectHorizontalDragGestures(onDragStart = { drag = 0f }, onHorizontalDrag = { change, amount -> change.consume(); drag += amount }, onDragEnd = { if (kotlin.math.abs(drag) > 80f) page(if (drag < 0) 1 else -1) })
             }, horizontalArrangement = Arrangement.SpaceEvenly) {
-                val monday = day.minusDays((day.dayOfWeek.value - 1).toLong())
-                (0..6).forEach { offset ->
-                    val date = monday.plusDays(offset.toLong())
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, androidx.compose.ui.platform.LocalConfiguration.current.locales[0]), style = MaterialTheme.typography.labelSmall)
-                        FilterChip(selected = day == date, onClick = { dayText = date.toString() }, label = { Text(date.dayOfMonth.toString()) })
-                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            state.requests.filter { it.pending && it.candidate?.startMillis?.let { ms -> Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()).toLocalDate() == date } == true }
-                                .flatMap { it.labels }.distinct().take(4).forEach { label ->
-                                    Box(Modifier.size(5.dp).background(parseTimelineColor(state.settings.labels.firstOrNull { it.name == label }?.colorHex), RoundedCornerShape(50)))
-                                }
-                        }
+                queryDays.forEach { date ->
+                    Column(Modifier.weight(1f).clickable { dayText = date.toString() }.padding(vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(date.dayOfWeek.getDisplayName(java.time.format.TextStyle.SHORT, locale), style = MaterialTheme.typography.labelSmall)
+                        Surface(shape = RoundedCornerShape(12.dp), color = if (day == date) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface) { Text(date.dayOfMonth.toString(), Modifier.padding(10.dp)) }
+                        CalendarDayDots(date, events, calendarColors)
                     }
                 }
             }
             state.requests.filter { it.pending && it.candidate?.startMillis != null }.minByOrNull { it.candidate!!.startMillis!! }?.let { next ->
-                OutlinedButton(onClick = { onOpen(next.id) }, modifier = Modifier.fillMaxWidth()) { Text(tr("Nächste Entscheidung", "Next decision")); Spacer(Modifier.weight(1f)); Icon(Icons.Outlined.NavigateNext, null) }
+                TextButton(onClick = { dayText = Instant.ofEpochMilli(next.candidate!!.startMillis!!).atZone(zone).toLocalDate().toString(); view = "DAY" }) { Text(tr("Nächste Entscheidung", "Next decision")); Icon(Icons.Outlined.NavigateNext, null) }
             }
             if (state.calendars.none { it.included } || failed) Text(tr("Kalender auswählen und Leseberechtigung erteilen. Bis dahin ist die Machbarkeit unklar.", "Select calendars and grant read permission. Until then, feasibility is unknown."), color = MaterialTheme.colorScheme.error)
-            if (requests.isEmpty() && events.isEmpty()) Text(tr("Keine Termine an diesem Tag.", "No appointments on this day."))
         }
-        item {
+        if (view == "MONTH") {
+            item { Text(day.format(DateTimeFormatter.ofPattern("EEE, dd.MM.yyyy", locale)), style = MaterialTheme.typography.titleMedium) }
+            val dayEvents = events.filter { CalendarDates.overlapsDay(it.start, it.end, day, zone) }
+            if (dayEvents.isEmpty() && requests.isEmpty()) item { Text(tr("Keine Termine", "No appointments")) }
+            items(dayEvents, key = { it.id }) { event ->
+                ListItem(headlineContent = { Text(event.title ?: tr("Belegt", "Busy")) },
+                    leadingContent = { AppointmentKindIcon(event.location) },
+                    supportingContent = { Text(event.start.atZone(zone).toLocalTime().toString()) },
+                    modifier = Modifier.clickable { selectedEvent = event })
+            }
+            items(requests, key = { "request:" + it.id }) { request -> ListItem(headlineContent = { Text(request.subject) }, leadingContent = { AppointmentKindIcon(request.candidate?.location, request.candidate?.mode) }, modifier = Modifier.clickable { onOpen(request.id) }) }
+        } else item {
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                shownDays.forEach { date ->
-                    TimelineDay(date, events, requests, state, colors, if (dayCount == 1) 330.dp else if (dayCount == 3) 210.dp else 150.dp, onOpen, onEvent = { selectedEvent = it })
-                }
+                shownDays.forEach { date -> TimelineDay(date, events, requests, state, calendarColors, if (view == "DAY") 330.dp else 150.dp, onOpen, onEvent = { selectedEvent = it }) }
             }
         }
     }
+    if (jump) MonthJumpDialog(day, onDismiss = { jump = false }) { dayText = it.toString(); jump = false }
     selectedEvent?.let { event -> AlertDialog(onDismissRequest = { selectedEvent = null }, title = { Text(event.title ?: tr("Kalendertermin", "Calendar event")) }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("${event.start.atZone(ZoneId.systemDefault()).toLocalDateTime()} – ${event.end.atZone(ZoneId.systemDefault()).toLocalTime()}")
+            AppointmentKindIcon(event.location)
+            Text("${event.start.atZone(zone).toLocalDateTime()} – ${event.end.atZone(zone).toLocalDateTime()}")
             event.location?.let { Text(it) }
             event.description?.let { SelectionContainer { Text(it.take(100_000)) } }
         }
@@ -123,7 +140,7 @@ private fun TimelineDay(date: LocalDate, events: List<CalendarEventRef>, request
                 Text("%02d:00".format(hour), style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(40.dp).offset(y = hourHeight * hour))
                 HorizontalDivider(Modifier.padding(start = 42.dp).offset(y = hourHeight * hour))
             }
-            events.filter { it.start.atZone(zone).toLocalDate() == date || it.end.atZone(zone).toLocalDate() == date }.forEach { event ->
+            events.filter { CalendarDates.overlapsDay(it.start, it.end, date, zone) }.forEach { event ->
                 val start = maxOf(event.start, date.atStartOfDay(zone).toInstant()); val end = minOf(event.end, date.plusDays(1).atStartOfDay(zone).toInstant())
                 val startMinutes = Duration.between(date.atStartOfDay(zone).toInstant(), start).toMinutes().coerceIn(0, 1439)
                 val duration = Duration.between(start, end).toMinutes().coerceAtLeast(1)
@@ -135,7 +152,7 @@ private fun TimelineDay(date: LocalDate, events: List<CalendarEventRef>, request
                     .then(if (travel) Modifier.drawBehind { drawRoundRect(lineColor, style = Stroke(width = 2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(9f, 7f))), cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx())) } else Modifier)
                 Surface(modifier = modifier, shape = RoundedCornerShape(10.dp), color = if (reservation) MaterialTheme.colorScheme.primaryContainer.copy(alpha = .75f) else lineColor.copy(alpha = .2f), border = if (!travel) BorderStroke(1.dp, lineColor) else null) {
                     Column(Modifier.padding(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) { Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f)); if (travel) Icon(Icons.Outlined.DirectionsCar, null, Modifier.size(15.dp)) }
+                        Row(verticalAlignment = Alignment.CenterVertically) { AppointmentKindIcon(event.location, modifier = Modifier.size(16.dp)); Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.weight(1f)); if (travel) Icon(Icons.Outlined.DirectionsCar, null, Modifier.size(15.dp)) }
                         Text((if (reservation) tr("Reserviert · ", "Reserved · ") else "") + (event.title ?: tr("Belegt", "Busy")), maxLines = if (duration > 75) 2 else 1, style = MaterialTheme.typography.bodySmall)
                         if (travel) Text(tr("⋯ führt zum Auftrag", "⋯ connects to order"), style = MaterialTheme.typography.labelSmall)
                     }
@@ -145,7 +162,7 @@ private fun TimelineDay(date: LocalDate, events: List<CalendarEventRef>, request
                 val candidate = request.candidate!!; val start = Instant.ofEpochMilli(candidate.startMillis!!); val end = Instant.ofEpochMilli(candidate.endMillis ?: candidate.startMillis + candidate.durationMinutes * 60_000L)
                 val startMinutes = Duration.between(date.atStartOfDay(zone).toInstant(), start).toMinutes().coerceIn(0, 1439); val duration = Duration.between(start, end).toMinutes().coerceAtLeast(1)
                 Card(onClick = { onOpen(request.id) }, modifier = Modifier.padding(start = 48.dp, end = 5.dp).fillMaxWidth().offset(y = hourHeight * (startMinutes / 60f)).height((hourHeight * (duration / 60f)).coerceAtLeast(34.dp)), border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = .86f))) {
-                    Column(Modifier.padding(6.dp)) { Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall); Text(request.subject, maxLines = 2, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) }
+                    Column(Modifier.padding(6.dp)) { AppointmentKindIcon(candidate.location, candidate.mode, Modifier.size(16.dp)); Text("${start.atZone(zone).toLocalTime()}–${end.atZone(zone).toLocalTime()}", style = MaterialTheme.typography.labelSmall); Text(request.subject, maxLines = 2, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
@@ -158,7 +175,7 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
     var visited by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val requests = state.requests.filter { it.pending && it.id !in visited }.sortedByDescending { PlanningPolicy.priority(it, state.settings).score }
     val request = requests.firstOrNull()
-    Column(Modifier.fillMaxSize().padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 4.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             TextButton(onClick = onClose) { Text(tr("Schließen", "Close")) }
             Text("${visited.size + if (request != null) 1 else 0} / ${visited.size + requests.size}")
@@ -167,6 +184,11 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
             Text(tr("Alles gesichtet.", "All reviewed."), style = MaterialTheme.typography.headlineMedium)
             Button(onClick = { visited = emptyList() }) { Text(tr("Erneut ansehen", "Review again")) }
         } else {
+            var assessment by remember(request.id) { mutableStateOf<cc.stkmn.kalplan.application.Assessment?>(null) }
+            LaunchedEffect(request, state.settings, state.calendars, state.requests) {
+                assessment = null
+                try { assessment = planner.assess(request) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { }
+            }
             var drag by remember(request.id) { mutableStateOf(0f) }
             val scope = rememberCoroutineScope()
             val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 150.dp.toPx() }
@@ -187,18 +209,26 @@ fun SwipeScreen(state: AppData, planner: Planner, onOpen: (String) -> Unit, onAc
                         Text(tr("Prüfen", "Review") + " →", Modifier.padding(12.dp), color = Color(0xFF075C39), fontWeight = FontWeight.Bold)
                     }
                 }
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.fillMaxWidth().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f; shadowElevation = 6f + progress * 14f }) {
-                        RequestCard(request, state, planner) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
-                    }
-                    Text(when { drag > threshold * 0.25f -> tr("Weiter nach rechts ziehen, um die Annahme zu prüfen", "Keep dragging right to review acceptance"); drag < -threshold * 0.25f -> tr("Weiter nach links ziehen, um später zu entscheiden", "Keep dragging left to decide later"); else -> tr("Karte ziehen: links später, rechts prüfen. Ein Swipe sendet nie eine Mail.", "Drag the card: left for later, right to review. A swipe never sends mail.") }, style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxSize().graphicsLayer { translationX = drag; rotationZ = drag / threshold * 3f }) {
+                    SwipeDecisionCard(request, state, assessment, onUnclear = { onUnclear(request.id); visited = visited + request.id }) { if (kotlin.math.abs(drag) < 8f) onOpen(request.id) }
                 }
             }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                OutlinedButton(onClick = { onLater(request.id); visited = visited + request.id }) { Text(tr("Später", "Later")) }
-                OutlinedButton(onClick = { onUnclear(request.id); visited = visited + request.id }) { Text("?") }
-                Button(onClick = { onAction(request.id, "accept") }) { Text(tr("Prüfen", "Review")) }
-            }
+            SwipeDecisionActions(
+                onDecline = { onAction(request.id, "decline") },
+                onLater = { onLater(request.id); visited = visited + request.id },
+                onAccept = { onAction(request.id, "accept") })
+        }
+    }
+}
+
+/** Measured before the weighted card, so actions stay outside its scrolling content. */
+@Composable
+fun SwipeDecisionActions(onDecline: () -> Unit, onLater: () -> Unit, onAccept: () -> Unit) {
+    Surface(Modifier.fillMaxWidth(), tonalElevation = 3.dp, shape = RoundedCornerShape(24.dp)) {
+        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalIconButton(modifier = Modifier.size(56.dp), onClick = onDecline) { Icon(Icons.Outlined.Close, tr("Ablehnen prüfen", "Review decline")) }
+            FilledTonalIconButton(modifier = Modifier.size(56.dp), onClick = onLater) { Icon(Icons.Outlined.Schedule, tr("Später", "Later")) }
+            FilledIconButton(modifier = Modifier.size(60.dp), onClick = onAccept) { Icon(Icons.Outlined.Check, tr("Annahme prüfen", "Review acceptance"), Modifier.size(30.dp)) }
         }
     }
 }

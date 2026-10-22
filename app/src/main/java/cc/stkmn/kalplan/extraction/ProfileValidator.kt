@@ -9,6 +9,10 @@ data class ProfileValidationError(
 class ProfileValidator {
     fun validate(profile: ExtractionProfile): List<ProfileValidationError> {
         val errors = mutableListOf<ProfileValidationError>()
+        if (profile.extractionZoneId != null && runCatching { java.time.ZoneId.of(profile.extractionZoneId) }.isFailure)
+            errors += ProfileValidationError("zone_id", "Ungültige Zeitzone.")
+        if (profile.examples.size > 10 || profile.examples.any { it.body.length > 20_000 || it.subject.length > 2000 || it.sender.length > 512 || it.expected.size > 100 || it.expected.any { e -> e.value.length > 20_000 } || runCatching { java.time.ZoneId.of(it.zoneId) }.isFailure })
+            errors += ProfileValidationError("example_limit", "Maximal 10 Beispiele mit je 20.000 Zeichen und gültiger Zeitzone.")
         if (listOf(profile.acceptTemplate, profile.declineTemplate).any { it != null && it.length > 100_000 })
             errors += ProfileValidationError("reply_template_limit", "Reply template exceeds size limit.")
         if (profile.matchers.size > 100 || profile.extractors.size > 100)
@@ -16,7 +20,7 @@ class ProfileValidator {
         if (profile.defaultDurationMinutes != null && profile.defaultDurationMinutes !in 1..10080)
             errors += ProfileValidationError("duration", "Invalid default duration.")
 
-        if (profile.schemaVersion != ExtractionProfile.CURRENT_SCHEMA_VERSION) {
+        if (profile.schemaVersion !in 1..ExtractionProfile.CURRENT_SCHEMA_VERSION) {
             errors += ProfileValidationError(
                 code = "schema_version",
                 message = "Unsupported profile schema version."
@@ -51,6 +55,26 @@ class ProfileValidator {
 
         val availableVariables = mutableSetOf("input", "body", "text", "subject", "sender")
         profile.extractors.forEach { rule ->
+            if (rule.displayName.length > 200 || rule.variants.size > 20 || rule.labelMappings.size > 100 || rule.modeMappings.size > 100 ||
+                rule.labelMappings.any { it.value.isBlank() || it.label.isBlank() || it.value.length > 1000 || it.label.length > 200 } ||
+                rule.modeMappings.any { it.key.isBlank() || it.key.length > 1000 || it.value !in setOf("ONLINE", "ONSITE", "HYBRID", "UNKNOWN") })
+                errors += ProfileValidationError("field_limit", "Feldname, Varianten oder Wertzuordnungen ungültig.", rule.id)
+            if (rule.labelMappings.groupBy { it.value.trim().lowercase(java.util.Locale.ROOT) }.any { (_, entries) -> entries.map { it.label }.distinct().size > 1 } ||
+                rule.modeMappings.entries.groupBy { it.key.trim().lowercase(java.util.Locale.ROOT) }.any { (_, entries) -> entries.map { it.value }.distinct().size > 1 })
+                errors += ProfileValidationError("mapping_conflict", "Widersprüchliche Wertzuordnungen.", rule.id)
+            (listOfNotNull(rule.selector) + rule.variants).forEach { selector ->
+                runCatching {
+                    require(selector.anchor.length <= 1000 && selector.endAnchor.length <= 1000 && selector.separator.length <= 20)
+                    when (selector.kind) {
+                        FieldSelectorKind.LABELED_LINE -> require(selector.anchor.isNotBlank() && selector.separator.isNotEmpty())
+                        FieldSelectorKind.BETWEEN -> require(selector.anchor.isNotBlank())
+                        FieldSelectorKind.TABLE_COLUMN -> require(selector.anchor.isNotBlank() && selector.column in 1..100 && selector.separator.isNotEmpty())
+                        FieldSelectorKind.REGEX -> require(selector.group in 0..SafePattern.compile(selector.pattern, selector.ignoreCase).matcher("").groupCount())
+                        FieldSelectorKind.WHOLE -> Unit
+                    }
+                    FieldSelectorEngine.find("", selector)
+                }.onFailure { errors += ProfileValidationError("invalid_selector", "Feldquelle, Anker oder Spalte ungültig.", rule.id) }
+            }
             if (rule.key.isBlank()) {
                 errors += ProfileValidationError("blank_extractor_key", "Extractor key is blank.", rule.id)
             }
@@ -65,7 +89,7 @@ class ProfileValidator {
                 )
             }
 
-            runCatching {
+            if (rule.selector == null) runCatching {
                 val regex = SafePattern.compile(rule.regex)
                 val groups = regex.matcher("").groupCount()
                 require(rule.group in 0..groups) { "Capture group does not exist." }
