@@ -271,7 +271,12 @@ class FlexibleTemporalParser {
         // Only a colon or an explicit clock marker disambiguates a range here:
         // an unmarked 19-10-2026 must remain eligible as a date.
         val clockRanges = timeRange.findAll(text).filter {
-            ':' in it.value || it.groupValues[3].isNotBlank() || it.groupValues[6].isNotBlank()
+            // The optional marker can match the prefix of a later "Uhrzeit" header.
+            // Such a header on another line must not turn a date into a clock range.
+            val suffix = it.groups[6]
+            val endMarker = suffix != null && text.getOrNull(suffix.range.last + 1)?.isLetter() != true
+            ':' in it.value || '\n' !in it.value && '\r' !in it.value &&
+                (it.groupValues[3].isNotBlank() || endMarker)
         }.map { it.range }.toList()
         // Never reinterpret a fragment of an ISO date or a clock range as a DMY/MDY date.
         val numericMatches = numericDate.findAll(removeRanges(text, isoMatches.map { it.range } + clockRanges)).toList()

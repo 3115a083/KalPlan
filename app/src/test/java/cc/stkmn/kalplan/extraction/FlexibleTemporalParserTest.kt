@@ -175,6 +175,8 @@ class FlexibleTemporalParserTest {
         val received = Instant.parse("2026-10-19T08:00:00Z").atZone(zone)
         val dates = parser.parse("19-10-2026 oder 20-10-2026", timeText = "14:00-15:00", reference = received)
         assertEquals(listOf(19, 20), dates.candidates.map { it.date.dayOfMonth })
+        val withHeader = parser.parse("Datum: 19-10\nUhrzeit: 14:00-15:00", reference = received)
+        assertEquals(LocalDate.of(2026, 10, 19), withHeader.candidates.single().date)
         val invalid = parser.parse("31.02.2026 um 14:00-15:00", reference = received)
         assertTrue(invalid.candidates.isEmpty())
         assertTrue(invalid.issues.any { it.code == "invalid_date" })
