@@ -253,6 +253,8 @@ class AppSmokeTest {
             throw failure
         }
         compose.onNodeWithTag("profile-example-check-0").assertTextContains("✓", substring = true)
+        compose.onNodeWithText("At least one numeric date was invalid.").assertDoesNotExist()
+        compose.onNodeWithText("Duration could not be parsed safely.").assertDoesNotExist()
         screenshot("profile-workbench-preview")
         compose.onNodeWithTag("profile-tab-3").performClick()
         compose.onNodeWithText("Acceptance template, empty = global").performScrollTo().performTextReplacement("Accepted {feld.field_1}")

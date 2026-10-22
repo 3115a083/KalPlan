@@ -1,6 +1,6 @@
-# KalPlan 0.7.0-dev
+# KalPlan 0.7.1-dev
 
-The profile workbench supports freely named fields, selectable source regions, recognition refinement, explicit expected-value examples and a shared extraction preview. Missing appointment data can be suggested by a bounded local heuristic fallback. See [the focused review](docs/REVIEW_0.7.0.md) for scope and verification limits.
+The profile workbench supports freely named fields, selectable source regions, recognition refinement, explicit expected-value examples and a shared extraction preview. Missing appointment data can be suggested by a bounded local heuristic fallback. Version 0.7.1 corrects spurious date/duration warnings for valid time ranges. See [the correction review](docs/REVIEW_0.7.1.md) and [the profile review](docs/REVIEW_0.7.0.md) for scope and verification limits.
 
 Android app for reviewing appointment requests, checking device calendars and planning replies. This branch turns the original scaffold into a functional development build using the Dispatcher design and icon 1.
 

@@ -132,10 +132,14 @@ class KalPlanExtractionPipeline(
             }
         }
 
+        // Free text without a duration is normal. Keep malformed configured values
+        // for validation, but do not present an absent optional guess as a parse error.
+        val durationText = durationField?.value ?: fallback(SemanticField.DURATION)
+            .takeIf { temporalParser.parseDurationMinutes(it) != null }.orEmpty()
         var temporal = temporalParser.parse(
             dateText = dateText,
             timeText = timeText,
-            durationText = durationField?.value ?: fallback(SemanticField.DURATION),
+            durationText = durationText,
             locale = profile?.locale ?: TemporalLocale.DE_DE,
             reference = ZonedDateTime.ofInstant(normalizedInput.receivedAt, normalizedInput.zoneId)
         )

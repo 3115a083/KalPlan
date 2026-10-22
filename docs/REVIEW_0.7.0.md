@@ -1,6 +1,6 @@
 # Profile workbench and local fallback, 0.7.0-dev
 
-The former settings and guided editors now share one workbench. Users select values in normalized local mail, create freely named typed fields, and correct field recognition by changing anchors, selecting a new source or adding a source-compatible alternative. Field names are independent of appointment meanings. One value may supply appointment fields, existing labels, a description and `{feld.key}` reply/calendar template variables.
+The former settings and guided editors now share one workbench. Users select values in raw local mail drafts, create freely named typed fields, and correct field recognition by changing anchors, selecting a new source or adding a source-compatible alternative. Selection offsets are mapped to normalized mail only when creating a rule. Field names are independent of appointment meanings. One value may supply appointment fields, existing labels, a description and `{feld.key}` reply/calendar template variables.
 
 Literal labeled lines (including empty values), bounded multiline regions, whole sources, table columns and bounded RE2/J patterns are supported. Legacy IDs, matcher order, dependent variables, transforms, direction, locale, date mode and reply templates survive editing. New profiles use schema 2; schema 1 remains readable. A source-dependent field never falls back outside its parent.
 
@@ -14,4 +14,4 @@ Relative and explicit date mentions are collected together. Equal dates deduplic
 
 Limits: this remains a review-oriented editor. Repeated table rows or repeated blocks with different values generate conflicting-match warnings; they are not automatically paired into several independently complete appointment records. Fallback handles bounded text and known date/time/address forms and can miss unusual language. Original real-provider mailbox connectivity remains unverified. Test signing differs between CI runs; export user data before switching APKs, without blindly uninstalling an existing installation.
 
-Validation is pending for this implementation. Earlier CI 81 belongs to 0.6.1 and does not validate these changes.
+Validated at code head `d00b99f417ea180f3224043d296aa2c0f6229818` in [CI89](https://github.com/3115a083/KalPlan/actions/runs/39424696477): 160 unit tests and 6/6 device tests each on API26 and API36 passed. Lint reported zero errors, 45 warnings and five hints; OSV checked 142 components with zero matches at that time. System-bar screenshots for light/dark activity and full-screen dialog were inspected on both APIs. These results apply to 0.7.0; see the 0.7.1 review for the next correction.

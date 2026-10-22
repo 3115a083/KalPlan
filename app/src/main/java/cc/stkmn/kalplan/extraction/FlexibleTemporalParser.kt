@@ -267,10 +267,14 @@ class FlexibleTemporalParser {
         }.toList()
         absolute += iso
 
-        // Never reinterpret a fragment of an ISO date as a DMY/MDY date.
-        val numericMatches = numericDate.findAll(text).filter { numeric ->
-            isoMatches.none { isoMatch -> numeric.range.first <= isoMatch.range.last && isoMatch.range.first <= numeric.range.last }
-        }.toList()
+        // Clock ranges contain date-like fragments, e.g. the 00-15 in 14:00-15:00.
+        // Only a colon or an explicit clock marker disambiguates a range here:
+        // an unmarked 19-10-2026 must remain eligible as a date.
+        val clockRanges = timeRange.findAll(text).filter {
+            ':' in it.value || it.groupValues[3].isNotBlank() || it.groupValues[6].isNotBlank()
+        }.map { it.range }.toList()
+        // Never reinterpret a fragment of an ISO date or a clock range as a DMY/MDY date.
+        val numericMatches = numericDate.findAll(removeRanges(text, isoMatches.map { it.range } + clockRanges)).toList()
         if (numericMatches.isNotEmpty()) {
             val explicitYears = numericMatches.mapNotNull {
                 it.groupValues[3].takeIf(String::isNotBlank)?.let { y -> resolveExplicitYear(y) }

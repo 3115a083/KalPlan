@@ -160,6 +160,27 @@ class FlexibleTemporalParserTest {
     }
 
     @Test
+    fun clockRangeFragmentsAreNotInvalidDates() {
+        val received = Instant.parse("2026-10-19T08:00:00Z").atZone(zone)
+        listOf("14:00-15:00", "14:00 – 15:00", "14:30 - 16", "14.00-15.00 Uhr").forEach { clock ->
+            val result = parser.parse("Datum: 14.12.2026\nUhrzeit: $clock", reference = received)
+            assertEquals(clock, LocalDate.of(2026, 12, 14), result.candidates.single().date)
+            assertEquals(clock, 14, result.candidates.single().startTime?.hour)
+            assertTrue(clock, result.issues.none { it.code == "invalid_date" })
+        }
+    }
+
+    @Test
+    fun clockFilteringKeepsDateAlternativesAndRealInvalidDates() {
+        val received = Instant.parse("2026-10-19T08:00:00Z").atZone(zone)
+        val dates = parser.parse("19-10-2026 oder 20-10-2026", timeText = "14:00-15:00", reference = received)
+        assertEquals(listOf(19, 20), dates.candidates.map { it.date.dayOfMonth })
+        val invalid = parser.parse("31.02.2026 um 14:00-15:00", reference = received)
+        assertTrue(invalid.candidates.isEmpty())
+        assertTrue(invalid.issues.any { it.code == "invalid_date" })
+    }
+
+    @Test
     fun receivedTimestampAndZoneAnchorRelativeDaysAcrossMidnightAndYearRollover() {
         // UTC still says October 18, while the received local day in Berlin is October 19.
         val received = Instant.parse("2026-10-18T22:30:00Z").atZone(zone)
